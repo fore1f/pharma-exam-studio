@@ -47,7 +47,7 @@ const state = {
   // 法令・○×・比較表
   studyPack: null,
   activeLawIdx: -1, // -1 = 全法令横断
-  redSheetOn: false,
+  redSheetOn: true,
   oxCategory: "すべて",
   oxList: [],
   oxIndex: 0,

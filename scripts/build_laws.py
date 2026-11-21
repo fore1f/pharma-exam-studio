@@ -122,7 +122,11 @@ def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
     wanted = set(law_cfg["articles"])
     articles_out: list[dict[str, Any]] = []
 
-    for art in root.findall(".//Article"):
+    # 本則（MainProvision）のみから抽出（附則の重複条文を完全に除外）
+    main_prov = root.find(".//MainProvision")
+    search_root = main_prov if main_prov is not None else root
+
+    for art in search_root.findall(".//Article"):
         num_attr = art.get("Num", "")
         if num_attr not in wanted:
             continue
@@ -246,9 +250,9 @@ def build_ox_questions() -> list[dict[str, Any]]:
             "id": "ox-008",
             "category": "薬剤師法",
             "statement": "薬剤師免許の絶対的欠格事由には、未成年者が含まれる。",
-            "answer": False,
-            "explanation": "×：薬剤師法では「未成年者」は絶対的欠格事由ではなく「相対的欠格事由」（免許を与えないことがある）に分類されます。絶対的欠格事由はありません。",
-            "ref": "薬剤師法第5条",
+            "answer": True,
+            "explanation": "○：薬剤師法第4条（絶対的欠格事由）により、「未成年者には、免許を与えない」と定められています（心身の障害や麻薬中毒者・罰金以上の刑に処せられた者などは第5条の相対的欠格事由です）。",
+            "ref": "薬剤師法第4条・第5条",
         },
         # --- 薬機法 ---
         {
