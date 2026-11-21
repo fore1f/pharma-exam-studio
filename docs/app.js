@@ -14,6 +14,7 @@ const PARENT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwz34ohkIf15
 // 起動パスワードのSHA-256ハッシュ（初期パスワード: yakugaku2026）
 const AUTH_HASH = "6abed39429b147f70634cb1fc554069f2e53d6bbf03487daac82bead1a050af2";
 const AUTH_SESSION_KEY = "pharma_exam_auth_ok_v1";
+const PARENT_MUTE_KEY = "pharma_exam_parent_mute_v1";
 
 const STORAGE_KEY = "pharma_exam_studio_v1";
 
@@ -174,23 +175,56 @@ function recordActivity(event, qid, subject, isCorrect) {
   sendSilentParentLog(event, qid, subject, isCorrect);
 }
 
+function detectDeviceType() {
+  const ua = navigator.userAgent || "";
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return "iPad";
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? "Android" : "AndroidTab";
+  if (/Windows/i.test(ua)) return "WinPC";
+  if (/Macintosh/i.test(ua)) return "Mac";
+  return "Web";
+}
+
+function getDeviceLabel() {
+  const shortId = String(state.progress.deviceId || "0000").replace(/^dev-/, "").slice(0, 4);
+  return `${detectDeviceType()}(${shortId})`;
+}
+
+function isParentMuted() {
+  try {
+    return localStorage.getItem(PARENT_MUTE_KEY) === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
+function setParentMuted(flag) {
+  try {
+    if (flag) localStorage.setItem(PARENT_MUTE_KEY, "1");
+    else localStorage.removeItem(PARENT_MUTE_KEY);
+  } catch (_) {}
+}
+
 /**
  * 裏側で静かにGoogleスプレッドシートへ送信（エラー時も画面には一切出さない）
  */
-function sendSilentParentLog(event, qid, subject, isCorrect) {
+function sendSilentParentLog(event, qid, subject, isCorrect, forceSend = false) {
   if (!PARENT_WEBHOOK_URL) return;
+  if (!forceSend && isParentMuted()) return;
   try {
     const stats = getOverallStats();
+    const devType = detectDeviceType();
+    const subjectWithDev = subject ? `${subject} [${devType}]` : `[${devType}]`;
     const payload = {
       event,
       qid: qid || "",
-      subject: subject || "",
+      subject: subjectWithDev,
       correct: isCorrect,
       todayCount: stats.todayCount,
       totalCount: stats.total,
       accuracy: stats.acc,
       todayMinutes: getTodayMinutes(),
-      deviceId: state.progress.deviceId,
+      deviceId: getDeviceLabel(),
     };
     fetch(PARENT_WEBHOOK_URL, {
       method: "POST",
@@ -1176,13 +1210,37 @@ function bindSecretParentTrigger() {
       alert("Googleスプレッドシート連携URL（PARENT_WEBHOOK_URL）が未設定です。");
       return;
     }
-    sendSilentParentLog("test_ping", "TEST", "接続テスト", true);
+    sendSilentParentLog("test_ping", "TEST", "親テスト接続確認", true, true);
     alert("テスト記録を送信しました。数秒後に「クラウドから最新レポート取得」を押して確認してください。");
   });
+
+  const muteBtn = document.getElementById("btnToggleParentMute");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", () => {
+      setParentMuted(!isParentMuted());
+      updateParentMuteUI();
+    });
+  }
+}
+
+function updateParentMuteUI() {
+  const lbl = document.getElementById("parentDeviceTagLabel");
+  if (lbl) lbl.textContent = getDeviceLabel();
+  const btn = document.getElementById("btnToggleParentMute");
+  if (!btn) return;
+  const muted = isParentMuted();
+  if (muted) {
+    btn.textContent = "🔇 お父さん用（送信OFF・混ざらない）";
+    btn.className = "btn btn-danger btn-sm";
+  } else {
+    btn.textContent = "📡 通常（この端末の学習を記録送信）";
+    btn.className = "btn btn-secondary btn-sm";
+  }
 }
 
 function openParentModal() {
   document.getElementById("parentModal").classList.add("open");
+  updateParentMuteUI();
   const statusEl = document.getElementById("parentCloudStatus");
   if (PARENT_WEBHOOK_URL) {
     statusEl.innerHTML = "✅ <strong>クラウド遠隔見守り連携：ON</strong>（お子さんのスマホの学習履歴をリアルタイム取得できます）";

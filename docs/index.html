@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261121c" />
+  <link rel="stylesheet" href="./styles.css?v=20261121d" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -576,6 +576,14 @@
 
       <div id="parentCloudStatus" class="judge-box info" style="margin-bottom:14px;"></div>
 
+      <div style="background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:14px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+        <div>
+          <strong style="font-size:13px; color:var(--text);">🔇 この端末の記録送信設定（現在の端末：<span id="parentDeviceTagLabel">-</span>）</strong>
+          <div style="font-size:12px; color:var(--text-sub);">お父さんのPC・スマホでONにしておくと、動作確認してもお子さんの記録に混ざりません。</div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnToggleParentMute">この端末は送信する（通常）</button>
+      </div>
+
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
         <button class="btn btn-primary btn-sm" id="btnFetchCloudReport">🔄 クラウドから最新レポート取得</button>
         <button class="btn btn-secondary btn-sm" id="btnSendTestPing">📡 テスト記録を送信</button>
@@ -614,6 +622,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261121c"></script>
+  <script src="./app.js?v=20261121d"></script>
 </body>
 </html>
