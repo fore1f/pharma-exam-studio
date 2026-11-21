@@ -1036,6 +1036,12 @@ function bindLawControls() {
     document.querySelectorAll("#lawArticlesList .cloze.revealed").forEach((el) => {
       el.classList.remove("revealed");
     });
+    document.querySelectorAll("#lawArticlesList .article-point-box.point-open").forEach((el) => {
+      el.classList.remove("point-open");
+    });
+    document.querySelectorAll("#lawArticlesList .js-point-toggle-btn").forEach((btn) => {
+      btn.textContent = "💡 暗記ポイント・ひっかけを見る ▼";
+    });
   });
 
   document.getElementById("lawSearch").addEventListener("input", () => {
@@ -1412,7 +1418,10 @@ function renderLawArticles() {
     const trap = art.point_trap || "";
     const pointHtml =
       tags.length > 0 || trap
-        ? `<div class="article-point-box">
+        ? `<div class="article-point-toggle">
+            <button type="button" class="btn btn-secondary btn-sm js-point-toggle-btn">💡 暗記ポイント・ひっかけを見る ▼</button>
+          </div>
+          <div class="article-point-box">
             ${
               tags.length > 0
                 ? `<div class="article-point-tags">
@@ -1444,6 +1453,14 @@ function renderLawArticles() {
     div.querySelectorAll(".cloze").forEach((span) => {
       span.addEventListener("click", () => span.classList.toggle("revealed"));
     });
+    const ptBtn = div.querySelector(".js-point-toggle-btn");
+    const ptBox = div.querySelector(".article-point-box");
+    if (ptBtn && ptBox) {
+      ptBtn.addEventListener("click", () => {
+        const opened = ptBox.classList.toggle("point-open");
+        ptBtn.textContent = opened ? "▲ 暗記ポイントを隠す" : "💡 暗記ポイント・ひっかけを見る ▼";
+      });
+    }
     div.querySelector(".js-law-speak").addEventListener("click", () => {
       speakLawIndex(idx, false);
     });

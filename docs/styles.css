@@ -1086,8 +1086,12 @@ html, body {
   margin-bottom: 12px;
 }
 
+.article-point-toggle {
+  margin-top: 10px;
+}
+
 .article-point-box {
-  margin-top: 12px;
+  margin-top: 8px;
   padding: 12px 14px;
   border-radius: 12px;
   background: #fffbeb;
@@ -1096,6 +1100,18 @@ html, body {
   color: #78350f;
   font-size: 13.5px;
   line-height: 1.65;
+}
+
+.redsheet-on .article-point-box:not(.point-open) {
+  display: none;
+}
+
+.redsheet-on .article-point-toggle {
+  display: block;
+}
+
+#lawArticlesList:not(.redsheet-on) .article-point-toggle {
+  display: none;
 }
 
 .article-point-tags {
