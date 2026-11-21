@@ -1,13 +1,9 @@
-"""e-Gov法令API v2から最新の重要条文を取得し、法規学習パックを生成するスクリプト。
-
-取得対象:
-- 薬剤師法 (335AC0000000146)
-- 薬機法 (335AC0000000145)
-- 麻薬及び向精神薬取締法 (328AC0000000014)
-- 毒物及び劇物取締法 (325AC0000000303)
-- 医療法 (323AC0000000205)
-
-出力: docs/data/laws/study_pack.json
+"""e-Gov法令API v2から最新の重要条文を取得し、
+過去10年分（第102〜111回・3,450問）の過去問データとクロス照合して
+・試験頻出の赤シート穴埋め語句（大幅拡充）
+・各条文の過去10年の実際の出題回数＆関連過去問IDリスト
+・法規○×問題（36問）＆5大比較表
+を統合した docs/data/laws/study_pack.json を生成するスクリプト。
 """
 
 from __future__ import annotations
@@ -28,14 +24,115 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 EGOV_API_BASE = "https://laws.e-gov.go.jp/api/2/law_data"
+EXAMS_DIR = Path("docs/data/exams")
 OUT_DIR = Path("docs/data/laws")
+EXAM_NUMS = [111, 110, 109, 108, 107, 106, 105, 104, 103, 102]
 
-# 試験超頻出の条文番号マップ
+# 各条文の過去問マッチング用固有シグネチャ（法令名キーワードと組み合わせ、または固有語句で高精度抽出）
+ARTICLE_MATCH_HINTS: dict[tuple[str, str], list[str]] = {
+    # 薬剤師法
+    ("薬剤師法", "1"): ["公衆衛生の向上", "薬剤師の任務", "薬剤師法第一条", "薬剤師法第1条"],
+    ("薬剤師法", "2"): ["薬剤師の免許", "薬剤師免許"],
+    ("薬剤師法", "3"): ["薬剤師国家試験", "免許の要件"],
+    ("薬剤師法", "4"): ["絶対的欠格", "未成年者"],
+    ("薬剤師法", "5"): ["相対的欠格", "罰金以上の刑", "麻薬、大麻"],
+    ("薬剤師法", "6"): ["薬剤師名簿"],
+    ("薬剤師法", "7"): ["免許の登録", "免許証"],
+    ("薬剤師法", "8"): ["免許の取消", "業務の停止", "戒告", "再教育研修"],
+    ("薬剤師法", "9"): ["二年ごと", "2年ごと", "十二月三十一日", "12月31日", "届出票"],
+    ("薬剤師法", "19"): ["調剤してはならない", "薬剤師でない者", "自己の処方"],
+    ("薬剤師法", "21"): ["調剤の求め", "正当な理由", "応需"],
+    ("薬剤師法", "22"): ["調剤の場所", "薬局以外の場所", "居宅"],
+    ("薬剤師法", "23"): ["処方箋による調剤", "処方せんによる調剤", "変更して調剤"],
+    ("薬剤師法", "24"): ["疑義", "疑わしい点", "問い合わせ"],
+    ("薬剤師法", "25"): ["調剤された薬剤の表示", "用法及び用量", "容器又は被包"],
+    ("薬剤師法", "25_2"): ["情報提供", "服薬指導", "継続的", "把握", "フォローアップ"],
+    ("薬剤師法", "26"): ["処方箋への記入", "記名押印", "署名"],
+    ("薬剤師法", "27"): ["処方箋の保存", "調剤済みとなった日から三年間", "3年間保存"],
+    ("薬剤師法", "28"): ["調剤録"],
+    # 薬機法
+    ("薬機法", "1"): ["品質、有効性及び安全性", "保健衛生上の危害"],
+    ("薬機法", "1_5"): ["医薬関係者の責務", "医薬関係者"],
+    ("薬機法", "2"): ["日本薬局方", "医薬品の定義", "要指導医薬品", "一般用医薬品", "生物由来製品", "特定生物由来製品"],
+    ("薬機法", "4"): ["薬局の開設", "開設の許可", "薬局開設許可"],
+    ("薬機法", "7"): ["薬局の管理", "管理薬剤師", "薬局の管理者"],
+    ("薬機法", "8"): ["管理者の義務", "薬局の管理者"],
+    ("薬機法", "9"): ["薬局開設者の遵守", "体制省令"],
+    ("薬機法", "9_2"): ["調剤された薬剤の販売", "薬局医薬品"],
+    ("薬機法", "9_3"): ["オンライン服薬指導", "映像及び音声", "書面を用いて"],
+    ("薬機法", "9_4"): ["薬局開設者の掲示", "掲示"],
+    ("薬機法", "10"): ["休廃止", "廃止したとき", "三十日以内", "30日以内", "変更の届出"],
+    ("薬機法", "14"): ["製造販売の承認", "製造販売承認", "再審査", "再評価"],
+    ("薬機法", "24"): ["医薬品の販売業", "販売業の許可"],
+    ("薬機法", "25"): ["店舗販売業", "配置販売業", "卸売販売業"],
+    ("薬機法", "36_5"): ["要指導医薬品"],
+    ("薬機法", "36_6"): ["要指導医薬品", "対面"],
+    ("薬機法", "36_7"): ["第一類医薬品", "第二類医薬品", "第三類医薬品", "第1類医薬品", "第2類医薬品"],
+    ("薬機法", "36_9"): ["第一類医薬品", "登録販売者"],
+    ("薬機法", "36_10"): ["第一類医薬品", "情報提供", "努力義務"],
+    ("薬機法", "44"): ["毒薬", "劇薬", "黒地に白枠", "白地に赤枠"],
+    ("薬機法", "46"): ["毒薬", "劇薬", "譲渡手続", "譲渡文書"],
+    ("薬機法", "48"): ["毒薬", "劇薬", "貯蔵", "かぎ", "鍵"],
+    ("薬機法", "49"): ["処方箋医薬品", "正当な理由"],
+    ("薬機法", "50"): ["直接の容器", "記載事項", "製造番号"],
+    ("薬機法", "68_10"): ["副作用", "感染症報告", "副作用等報告", "PMDA"],
+    # 麻向法
+    ("麻向法", "1"): ["麻薬及び向精神薬"],
+    ("麻向法", "3"): ["麻薬輸入業者", "麻薬小売業者", "麻薬施用者", "麻薬管理者", "免許"],
+    ("麻向法", "4"): ["免許証"],
+    ("麻向法", "24"): ["麻薬の譲渡し", "麻薬小売業者間"],
+    ("麻向法", "26"): ["麻薬の譲受け", "譲受証"],
+    ("麻向法", "27"): ["麻薬処方箋", "麻薬施用者", "施用"],
+    ("麻向法", "29"): ["麻薬の廃棄", "麻薬廃棄届", "立会い"],
+    ("麻向法", "30"): ["麻薬の容器", "封かん証紙"],
+    ("麻向法", "32"): ["譲渡証", "譲受証"],
+    ("麻向法", "34"): ["麻薬の保管", "堅固な設備", "覚醒剤を除く"],
+    ("麻向法", "35"): ["麻薬事故届", "調剤済麻薬廃棄届", "盗取", "滅失"],
+    ("麻向法", "37"): ["麻薬帳簿", "麻薬卸売業者"],
+    ("麻向法", "38"): ["麻薬帳簿", "麻薬小売業者", "二年間", "2年間"],
+    ("麻向法", "39"): ["麻薬管理者", "帳簿"],
+    ("麻向法", "50"): ["向精神薬", "免許"],
+    ("麻向法", "50_16"): ["向精神薬", "譲渡し"],
+    ("麻向法", "50_21"): ["向精神薬", "保管", "かぎ"],
+    ("麻向法", "50_22"): ["向精神薬", "事故届"],
+    ("麻向法", "58_2"): ["麻薬中毒", "届出"],
+    # 毒劇法
+    ("毒劇法", "1"): ["毒物及び劇物"],
+    ("毒劇法", "2"): ["毒物", "劇物", "別表", "特定毒物"],
+    ("毒劇法", "3"): ["毒物劇物", "製造業", "販売業", "登録"],
+    ("毒劇法", "4"): ["毒物劇物", "登録", "更新", "六年", "五年"],
+    ("毒劇法", "7"): ["毒物劇物取扱責任者", "専任"],
+    ("毒劇法", "8"): ["毒物劇物取扱責任者", "応用化学", "資格"],
+    ("毒劇法", "11"): ["毒物", "劇物", "盗難", "紛失", "かぎ", "保管"],
+    ("毒劇法", "12"): ["医薬用外毒物", "医薬用外劇物", "表示"],
+    ("毒劇法", "14"): ["譲渡手続", "五年間", "5年間", "書面"],
+    ("毒劇法", "15"): ["十八歳未満", "18歳未満", "交付の制限"],
+    ("毒劇法", "15_2"): ["廃棄", "毒物", "劇物"],
+    ("毒劇法", "16_2"): ["事故の際の措置", "警察署", "保健所", "消防機関"],
+    # 医療法
+    ("医療法", "1"): ["医療法"],
+    ("医療法", "1_2"): ["医療提供施設", "生命の尊重", "個人の尊厳"],
+    ("医療法", "1_3"): ["良質かつ適切な医療"],
+    ("医療法", "1_4"): ["適切な説明", "理解を得る", "インフォームド"],
+    ("医療法", "1_5"): ["病院", "診療所", "二十人以上", "20人以上", "十九人以下"],
+    ("医療法", "1_6"): ["介護老人保健施設", "介護医療院"],
+    ("医療法", "4"): ["地域医療支援病院"],
+    ("医療法", "4_2"): ["特定機能病院"],
+    ("医療法", "6_2"): ["医療の安全", "安全管理"],
+    ("医療法", "6_3"): ["医療機能情報提供制度"],
+    ("医療法", "6_10"): ["医療事故", "医療事故調査"],
+    ("医療法", "6_12"): ["医療安全", "安全管理のための体制"],
+    ("医療法", "7"): ["病院の開設", "開設の許可", "病床"],
+    ("医療法", "15"): ["管理者の監督", "病院の管理者"],
+    ("医療法", "18"): ["専属の薬剤師"],
+}
+
 TARGET_LAWS: list[dict[str, Any]] = [
     {
         "id": "335AC0000000146",
         "name": "薬剤師法",
         "short": "薬剤師法",
+        "law_aliases": ["薬剤師法"],
         "articles": [
             "1", "2", "3", "4", "5", "6", "7", "8", "9",
             "19", "21", "22", "23", "24", "25", "25_2", "26", "27", "28",
@@ -45,6 +142,7 @@ TARGET_LAWS: list[dict[str, Any]] = [
         "id": "335AC0000000145",
         "name": "薬機法（医薬品医療機器等法）",
         "short": "薬機法",
+        "law_aliases": ["医薬品、医療機器等", "医薬品医療機器等法", "薬機法", "薬事法"],
         "articles": [
             "1", "1_5", "2", "4", "7", "8", "9", "9_2", "9_3", "9_4", "10",
             "14", "24", "25", "36_5", "36_6", "36_7", "36_9", "36_10",
@@ -55,6 +153,7 @@ TARGET_LAWS: list[dict[str, Any]] = [
         "id": "328AC0000000014",
         "name": "麻薬及び向精神薬取締法",
         "short": "麻向法",
+        "law_aliases": ["麻薬及び向精神薬取締法", "麻薬", "向精神薬"],
         "articles": [
             "1", "3", "4", "24", "26", "27", "29", "30", "32", "34", "35",
             "37", "38", "39", "50", "50_16", "50_21", "50_22", "58_2",
@@ -64,6 +163,7 @@ TARGET_LAWS: list[dict[str, Any]] = [
         "id": "325AC0000000303",
         "name": "毒物及び劇物取締法",
         "short": "毒劇法",
+        "law_aliases": ["毒物及び劇物取締法", "毒物劇物", "毒物", "劇物"],
         "articles": [
             "1", "2", "3", "4", "7", "8", "11", "12", "14", "15", "15_2", "16_2",
         ],
@@ -72,18 +172,48 @@ TARGET_LAWS: list[dict[str, Any]] = [
         "id": "323AC0000000205",
         "name": "医療法",
         "short": "医療法",
+        "law_aliases": ["医療法", "医療提供施設", "特定機能病院", "地域医療支援病院"],
         "articles": [
-            "1", "1_2", "1_3", "1_4", "1_5", "1_6", "4", "4_2", "6_2", "6_3", "6_10", "6_12", "7", "15", "18",
+            "1", "1_2", "1_3", "1_4", "1_5", "1_6", "4", "4_2",
+            "6_2", "6_3", "6_10", "6_12", "7", "15", "18",
         ],
     },
 ]
 
-# 赤シート自動ハイライト対象パターン（数字・期間・権限者・重要語）
+# 赤シート自動ハイライト対象（国試の穴埋め・ひっかけ超頻出語句を大幅拡充！）
 CLOZE_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(厚生労働大臣|都道府県知事|保健所を設置する市の市長|特別区の区長|内閣総理大臣|独立行政法人医薬品医療機器総合機構)"),
-    re.compile(r"([一二三四五六七八九十百千0-9０-９]+(?:年間?|箇月|か月|ヶ月|日以内|日|時間|歳未満|歳以上))"),
-    re.compile(r"(三十日以内|十日以内|十五日以内|三年|二年|五年|六年|十年|三十年)"),
-    re.compile(r"(免許|許可|登録|届出|承認|指定|確認|認可|処方箋|調剤録|譲渡証|譲受証|施用|廃棄|疑義|守秘|帳簿|鍵|かぎ)"),
+    # 1. 権限者・公的機関
+    re.compile(
+        r"(厚生労働大臣|都道府県知事|保健所を設置する市の市長|特別区の区長|内閣総理大臣|"
+        r"独立行政法人医薬品医療機器総合機構|医療事故調査・支援センター|麻薬取締員|警察署|保健所|消防機関)"
+    ),
+    # 2. 数字・期間・期限・年齢・病床数
+    re.compile(
+        r"([一二三四五六七八九十百千0-9０-９]+(?:年間?|箇月|か月|ヶ月|日以内|日|時間|歳未満|歳以上|人以上|人以下))"
+    ),
+    re.compile(
+        r"(三十日以内|十日以内|十五日以内|三年|二年|五年|六年|十年|三十年|十二月三十一日|十四歳未満|十八歳未満|二十人以上|十九人以下)"
+    ),
+    # 3. 国試で実際に穴埋め・正誤判定に出た核心フレーズ（大幅追加！）
+    re.compile(
+        r"(公衆衛生の向上及び増進|国民の健康な生活|生命の尊重と個人の尊厳の保持|良質かつ適切な医療|"
+        r"適切な説明|理解を得る|品質、有効性及び安全性|保健衛生上の危害|"
+        r"正当な理由|疑わしい点|確かめた後|継続的|薬学的知見|記名押印|署名|"
+        r"未成年者|心身の障害|罰金以上の刑|薬剤師名簿|再教育研修|"
+        r"要指導医薬品|一般用医薬品|第一類医薬品|第二類医薬品|第三類医薬品|"
+        r"処方箋医薬品|生物由来製品|特定生物由来製品|日本薬局方|"
+        r"地域連携薬局|専門医療機関連携薬局|登録販売者|店舗販売業|配置販売業|卸売販売業|"
+        r"毒薬|劇薬|毒物|劇物|特定毒物|毒物劇物取扱責任者|応用化学|専任|専属の薬剤師|"
+        r"黒地に白枠|白地に赤枠|医薬用外毒物|医薬用外劇物|他の物と区別|"
+        r"麻薬輸入業者|麻薬輸出業者|麻薬製造業者|麻薬小売業者|麻薬施用者|麻薬管理者|麻薬研究者|"
+        r"向精神薬|覚醒剤|堅固な設備|立会い|滅失|盗取|所在不明|盗難|紛失|速やかに|直ちに|"
+        r"医療提供施設|地域医療支援病院|特定機能病院|臨床研究中核病院|介護老人保健施設|病院|診療所|"
+        r"副作用|感染症|対面|書面|情報提供|指導|相談|副作用等)"
+    ),
+    # 4. 手続きの種類・重要名詞
+    re.compile(
+        r"(免許|許可|登録|届出|承認|指定|認定|認可|処方箋|調剤録|調剤|譲渡証|譲受証|施用|廃棄|疑義|守秘|帳簿|鍵|かぎ)"
+    ),
 ]
 
 
@@ -93,17 +223,98 @@ def _extract_text(elem: ET.Element) -> str:
     if elem.text:
         parts.append(elem.text)
     for child in elem:
-        if child.tag == "Rt":
-            pass
-        else:
+        if child.tag != "Rt":
             parts.append(_extract_text(child))
         if child.tail:
             parts.append(child.tail)
     return "".join(parts)
 
 
-def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
-    """e-Gov API v2から法令XMLを取得し、対象条文を抽出する。"""
+def load_all_past_exam_questions() -> list[dict[str, Any]]:
+    """過去10年分（3,450問）のJSONを読み込み、法規・実務・衛生の問題を返す。"""
+    all_qs: list[dict[str, Any]] = []
+    for num in EXAM_NUMS:
+        p = EXAMS_DIR / f"exam_{num}.json"
+        if not p.exists():
+            continue
+        data = json.loads(p.read_text(encoding="utf-8"))
+        for q in data.get("questions", []):
+            # 法規・実務・衛生など法令に関連する科目を中心に全問チェック
+            all_qs.append(q)
+    logger.info("過去問照合用に %d 問を読み込みました", len(all_qs))
+    return all_qs
+
+
+def find_related_past_questions(
+    law_short: str,
+    law_aliases: list[str],
+    art_num: str,
+    art_title: str,
+    all_qs: list[dict[str, Any]],
+) -> list[str]:
+    """過去10年分の過去問から、その条文に関連する出題IDリストを抽出する。"""
+    hints = ARTICLE_MATCH_HINTS.get((law_short, art_num), [])
+    # 条文番号そのものの明示（例: 第24条 / 第二十四条）
+    num_arabic = art_num.replace("_", "条の")
+    explicit_patterns = [f"第{num_arabic}条", art_title]
+
+    matched_ids: list[str] = []
+    for q in all_qs:
+        subj = q.get("subject", "")
+        # 法規・実務・衛生に絞ってノイズを防ぐ（他科目での単語偶然一致を除外）
+        if not any(s in subj for s in ("法規", "実務", "衛生")):
+            continue
+        txt = q.get("text", "")
+        if not txt:
+            continue
+
+        # 1. 法令名の言及があるか（または法規科目か）
+        has_law_mention = any(al in txt for al in law_aliases)
+        is_law_subj = "法規" in subj
+
+        # 明示的に「法令名 + 条文番号」が出ている場合（最高確度）
+        if has_law_mention and any(ep in txt for ep in explicit_patterns):
+            matched_ids.append(q["id"])
+            continue
+
+        # 2. 固有ヒント語句との一致
+        if not hints:
+            continue
+
+        # 強固有語句（法令名がなくても一意にその条文を指す語句）
+        hit_count = sum(1 for h in hints if h in txt)
+        if hit_count >= 2 and (has_law_mention or is_law_subj):
+            matched_ids.append(q["id"])
+        elif hit_count >= 1 and has_law_mention:
+            # 1語だけの一致でも、その語が十分具体的（3文字以上）かつ法令名も出ている場合
+            specific_hit = any((h in txt and len(h) >= 3 and h not in law_aliases) for h in hints)
+            if specific_hit:
+                matched_ids.append(q["id"])
+        elif hit_count >= 1 and is_law_subj:
+            # 法規科目で超固有語句が一致
+            ultra_specific = any(
+                (
+                    h in txt
+                    and len(h) >= 4
+                    and h not in ("情報提供", "届出", "免許", "登録", "保管", "廃棄", "表示", "副作用")
+                )
+                for h in hints
+            )
+            if ultra_specific:
+                matched_ids.append(q["id"])
+
+    # 新しい回（111→102）の順・重複除去
+    seen: set[str] = set()
+    unique_ids: list[str] = []
+    for qid in matched_ids:
+        if qid not in seen:
+            seen.add(qid)
+            unique_ids.append(qid)
+    return unique_ids
+
+
+def fetch_law_articles(law_cfg: dict[str, Any], all_qs: list[dict[str, Any]]) -> dict[str, Any]:
+    """e-Gov API v2から法令XMLの本則のみを取得し、赤シート語句と過去10年出題回数を付与する。"""
     law_id = law_cfg["id"]
     url = f"{EGOV_API_BASE}/{law_id}?response_format=xml"
     logger.info("e-Gov法令取得中: %s (%s)", law_cfg["name"], law_id)
@@ -111,7 +322,6 @@ def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
     resp.raise_for_status()
 
     root = ET.fromstring(resp.content)
-    # 改正日・法令番号などのメタ情報
     law_num = ""
     ln_el = root.find(".//law_num")
     if ln_el is None:
@@ -122,7 +332,6 @@ def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
     wanted = set(law_cfg["articles"])
     articles_out: list[dict[str, Any]] = []
 
-    # 本則（MainProvision）のみから抽出（附則の重複条文を完全に除外）
     main_prov = root.find(".//MainProvision")
     search_root = main_prov if main_prov is not None else root
 
@@ -147,7 +356,6 @@ def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
             if p_text.strip():
                 paragraphs.append(p_text.strip())
 
-            # 号（Item）も簡潔に含める（最大6号まで）
             items = para.findall("Item")
             for item in items[:6]:
                 it_title = _extract_text(item.find("ItemTitle")).strip() if item.find("ItemTitle") is not None else ""
@@ -159,12 +367,22 @@ def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
                     paragraphs.append(it_text.rstrip())
 
         full_body = "\n".join(paragraphs)
-        # 赤シート用キーワード抽出（重複除去・上位12語）
+
+        # 赤シート用キーワード抽出（長い語句を優先して最大30語）
         keywords: list[str] = []
         for pat in CLOZE_PATTERNS:
             for m in pat.findall(full_body):
-                if m not in keywords:
+                if m and m not in keywords:
                     keywords.append(m)
+
+        # 過去10年の出題実績を照合
+        related_qids = find_related_past_questions(
+            law_cfg["short"],
+            law_cfg.get("law_aliases", [law_cfg["short"]]),
+            num_attr,
+            title,
+            all_qs,
+        )
 
         articles_out.append(
             {
@@ -172,11 +390,19 @@ def fetch_law_articles(law_cfg: dict[str, Any]) -> dict[str, Any]:
                 "title": title,
                 "caption": caption,
                 "body": full_body,
-                "keywords": keywords[:14],
+                "keywords": keywords[:32],
+                "exam_count": len(related_qids),
+                "related_qids": related_qids[:25],
             }
         )
 
-    logger.info("  抽出完了: %s -> %d 条文", law_cfg["name"], len(articles_out))
+    total_hits = sum(a["exam_count"] for a in articles_out)
+    logger.info(
+        "  抽出完了: %s -> %d 条文（過去10年関連延べ %d 問マッチ）",
+        law_cfg["name"],
+        len(articles_out),
+        total_hits,
+    )
     return {
         "id": law_id,
         "name": law_cfg["name"],
@@ -565,11 +791,12 @@ def build_comparison_tables() -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    """法令データ・○×問題・比較表を統合してJSON保存する。"""
+    """過去10年過去問と照合し、法令データ・○×問題・比較表を統合保存する。"""
+    all_qs = load_all_past_exam_questions()
     statutes: list[dict[str, Any]] = []
     for cfg in TARGET_LAWS:
         try:
-            statutes.append(fetch_law_articles(cfg))
+            statutes.append(fetch_law_articles(cfg, all_qs))
         except Exception as exc:
             logger.exception("法令取得失敗 (%s): %s", cfg["name"], exc)
 

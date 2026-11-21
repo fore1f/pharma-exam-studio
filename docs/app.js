@@ -78,6 +78,10 @@ const state = {
   studyPack: null,
   activeLawIdx: 1, // デフォルトで薬機法を選択（-1 = 全法令横断）
   redSheetOn: true,
+  lawSort: "order", // "order" | "freq"
+  lawAudioRate: 1.0,
+  lawAudioActive: false,
+  lawShownList: [],
   oxCategory: "すべて",
   oxList: [],
   oxIndex: 0,
@@ -477,7 +481,7 @@ async function loadAllExams() {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122i");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.oxList = [...(state.studyPack.ox_questions || [])];
@@ -498,6 +502,7 @@ function bindNavigation() {
 }
 
 function switchView(viewName) {
+  if (viewName !== "law") stopLawAudio();
   state.currentView = viewName;
   document.querySelectorAll(".view-section").forEach((s) => s.classList.remove("active"));
   const el = document.getElementById(`view-${viewName}`);
@@ -1032,10 +1037,139 @@ function bindLawControls() {
     });
   });
 
-  document.getElementById("lawSearch").addEventListener("input", () => renderLawArticles());
+  document.getElementById("lawSearch").addEventListener("input", () => {
+    stopLawAudio();
+    renderLawArticles();
+  });
+
+  const sortBtn = document.getElementById("btnLawSort");
+  if (sortBtn) {
+    sortBtn.addEventListener("click", () => {
+      stopLawAudio();
+      state.lawSort = state.lawSort === "order" ? "freq" : "order";
+      sortBtn.textContent = state.lawSort === "freq" ? "🔥 よく出る順" : "📖 条文順";
+      sortBtn.className = state.lawSort === "freq" ? "btn btn-accent btn-sm" : "btn btn-secondary btn-sm";
+      renderLawArticles();
+    });
+  }
+
+  const speedBtn = document.getElementById("btnLawSpeed");
+  if (speedBtn) {
+    const rates = [1.0, 1.25, 1.5, 0.85];
+    speedBtn.addEventListener("click", () => {
+      const nextIdx = (rates.indexOf(state.lawAudioRate) + 1) % rates.length;
+      state.lawAudioRate = rates[nextIdx];
+      speedBtn.textContent = `速度：${state.lawAudioRate.toFixed(2).replace(/\.00$/, ".0")}x`;
+    });
+  }
+
+  const playAllBtn = document.getElementById("btnLawPlayAll");
+  if (playAllBtn) {
+    playAllBtn.addEventListener("click", () => startLawPlayAll());
+  }
+
+  const stopBtn = document.getElementById("btnLawStopAudio");
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => stopLawAudio());
+  }
+}
+
+function getJapaneseVoice() {
+  if (!("speechSynthesis" in window)) return null;
+  const voices = window.speechSynthesis.getVoices() || [];
+  return voices.find((v) => v.lang && v.lang.toLowerCase().startsWith("ja")) || null;
+}
+
+function stopLawAudio() {
+  state.lawAudioActive = false;
+  if ("speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (_) {}
+  }
+  document.querySelectorAll(".article-card.speaking").forEach((el) => el.classList.remove("speaking"));
+  const playBtn = document.getElementById("btnLawPlayAll");
+  const stopBtn = document.getElementById("btnLawStopAudio");
+  if (playBtn) playBtn.style.display = "inline-flex";
+  if (stopBtn) stopBtn.style.display = "none";
+}
+
+function speakLawIndex(idx, continuous) {
+  if (!("speechSynthesis" in window)) {
+    alert("お使いのブラウザは音声読み上げに対応していません。");
+    return;
+  }
+  const entry = state.lawShownList[idx];
+  if (!entry) {
+    stopLawAudio();
+    return;
+  }
+
+  try {
+    window.speechSynthesis.cancel();
+  } catch (_) {}
+
+  state.lawAudioActive = true;
+  const playBtn = document.getElementById("btnLawPlayAll");
+  const stopBtn = document.getElementById("btnLawStopAudio");
+  if (playBtn) playBtn.style.display = "none";
+  if (stopBtn) stopBtn.style.display = "inline-flex";
+
+  document.querySelectorAll(".article-card.speaking").forEach((el) => el.classList.remove("speaking"));
+  const cardEl = document.querySelector(`.article-card[data-law-idx="${idx}"]`);
+  if (cardEl) {
+    cardEl.classList.add("speaking");
+    cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  const { lawShort, art } = entry;
+  const speechText = `${lawShort}、${art.title}、${(art.caption || "").replace(/[（）()]/g, "")}。${art.body}`;
+  const utter = new SpeechSynthesisUtterance(speechText);
+  utter.lang = "ja-JP";
+  utter.rate = state.lawAudioRate || 1.0;
+  const jpVoice = getJapaneseVoice();
+  if (jpVoice) utter.voice = jpVoice;
+
+  utter.onend = () => {
+    if (!state.lawAudioActive) return;
+    if (continuous && idx + 1 < state.lawShownList.length) {
+      speakLawIndex(idx + 1, true);
+    } else {
+      stopLawAudio();
+    }
+  };
+  utter.onerror = () => {
+    stopLawAudio();
+  };
+  window.speechSynthesis.speak(utter);
+}
+
+function startLawPlayAll() {
+  if (!state.lawShownList || state.lawShownList.length === 0) return;
+  speakLawIndex(0, true);
+}
+
+async function openRelatedPastQuestions(qids, label) {
+  if (!qids || qids.length === 0) return;
+  stopLawAudio();
+  await loadAllExams();
+  const qSet = new Set(qids);
+  const pool = ALL_EXAM_NUMS.flatMap((n) => state.examCache[n] || []);
+  const matched = pool.filter((q) => qSet.has(q.id));
+  if (!matched.length) {
+    alert("該当する過去問が見つかりませんでした。");
+    return;
+  }
+  state.filteredQuestions = matched;
+  state.currentIndex = 0;
+  document.getElementById("examMatchCount").textContent = `⚖️ ${label} の関連過去問（${matched.length}問）`;
+  switchView("exam");
+  switchExamSubMode("practice");
+  renderCurrentQuestion();
 }
 
 function renderLawView() {
+  stopLawAudio();
   const statutes = state.studyPack?.statutes || [];
   const tabs = document.getElementById("lawTabs");
   tabs.innerHTML = "";
@@ -1082,7 +1216,12 @@ function renderLawArticles() {
     });
   });
 
-  const shown = matched.slice(0, 80);
+  if (state.lawSort === "freq") {
+    matched.sort((a, b) => (b.art.exam_count || 0) - (a.art.exam_count || 0));
+  }
+
+  const shown = matched.slice(0, 90);
+  state.lawShownList = shown;
   container.innerHTML = "";
   if (shown.length === 0) {
     container.innerHTML = `<div class="card">該当する条文が見つかりません。別のキーワードでお試しください。</div>`;
@@ -1091,24 +1230,53 @@ function renderLawArticles() {
 
   const countNote = document.createElement("div");
   countNote.style.cssText = "font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:10px;";
-  countNote.textContent = `該当条文：${matched.length}件${matched.length > 80 ? "（先頭80件を表示）" : ""}`;
+  countNote.textContent = `該当条文：${matched.length}件（${state.lawSort === "freq" ? "過去10年よく出る順" : "条文順"}）`;
   container.appendChild(countNote);
 
-  shown.forEach(({ lawShort, art }) => {
+  shown.forEach(({ lawShort, art }, idx) => {
     const div = document.createElement("div");
     div.className = "article-card";
+    div.dataset.lawIdx = String(idx);
     const bodyHtml = highlightClozeHtml(escapeHtml(art.body), art.keywords || []);
+    const cnt = art.exam_count || 0;
+    const freqBadge =
+      cnt >= 5
+        ? `<span class="badge badge-hot">🔥 過去10年で${cnt}問出題</span>`
+        : cnt > 0
+        ? `<span class="badge badge-seen">📌 過去10年で${cnt}問出題</span>`
+        : "";
+    const pastBtn =
+      cnt > 0
+        ? `<button type="button" class="btn btn-secondary btn-sm js-law-past-q">📝 関連過去問(${cnt}問)</button>`
+        : "";
+
     div.innerHTML = `
       <div class="article-head">
-        <span class="badge badge-subj">${escapeHtml(lawShort)}</span>
-        <span class="article-title">${escapeHtml(art.title)}</span>
-        <span class="article-caption">${escapeHtml(art.caption || "")}</span>
+        <div class="article-head-left">
+          <span class="badge badge-subj">${escapeHtml(lawShort)}</span>
+          <span class="article-title">${escapeHtml(art.title)}</span>
+          <span class="article-caption">${escapeHtml(art.caption || "")}</span>
+          ${freqBadge}
+        </div>
+        <div class="article-head-right">
+          <button type="button" class="btn btn-secondary btn-sm js-law-speak">🔊 読む</button>
+          ${pastBtn}
+        </div>
       </div>
       <div class="article-body">${bodyHtml}</div>
     `;
     div.querySelectorAll(".cloze").forEach((span) => {
       span.addEventListener("click", () => span.classList.toggle("revealed"));
     });
+    div.querySelector(".js-law-speak").addEventListener("click", () => {
+      speakLawIndex(idx, false);
+    });
+    const pastQBtn = div.querySelector(".js-law-past-q");
+    if (pastQBtn) {
+      pastQBtn.addEventListener("click", () => {
+        openRelatedPastQuestions(art.related_qids || [], `${lawShort} ${art.title}`);
+      });
+    }
     container.appendChild(div);
   });
 }

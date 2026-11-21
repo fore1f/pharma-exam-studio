@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122g" />
+  <link rel="stylesheet" href="./styles.css?v=20261122i" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -459,6 +459,19 @@
 
         <div class="law-tabs" id="lawTabs"></div>
 
+        <div class="audio-bar">
+          <div>
+            <strong style="color:var(--primary-dark);">🎧 音声読み上げ・並び替え</strong>
+            <span style="font-size:12px; color:var(--text-sub); display:block;">表示中の条文を連続で耳から聞き流し学習できます（各条文の🔊ボタンで個別再生もOK）</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnLawPlayAll">🎧 連続読み上げ</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLawStopAudio" style="display:none;">⏹ 停止</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLawSpeed">速度：1.0x</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLawSort">📖 条文順</button>
+          </div>
+        </div>
+
         <div class="redsheet-bar">
           <div>
             <strong style="color:#be123c;">📕 赤シート暗記モード</strong>
@@ -653,6 +666,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122h"></script>
+  <script src="./app.js?v=20261122i"></script>
 </body>
 </html>

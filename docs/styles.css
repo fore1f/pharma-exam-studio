@@ -1030,14 +1030,60 @@ html, body {
   border-radius: 14px;
   padding: 16px 18px;
   margin-bottom: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.article-card.speaking {
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
+  background: #f0fdfa;
 }
 
 .article-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.article-head-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.article-head-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-hot {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
+
+.badge-seen {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.audio-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  padding: 10px 14px;
+  border-radius: 12px;
+  margin-bottom: 12px;
 }
 
 .article-title {
