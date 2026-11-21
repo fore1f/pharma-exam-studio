@@ -1086,6 +1086,39 @@ html, body {
   margin-bottom: 12px;
 }
 
+.article-point-box {
+  margin-top: 12px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #d97706;
+  color: #78350f;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.article-point-label {
+  display: inline-block;
+  font-weight: 800;
+  color: #b45309;
+  margin-right: 6px;
+}
+
+.law-font-large .article-title {
+  font-size: 18px;
+}
+
+.law-font-large .article-body {
+  font-size: 17.5px;
+  line-height: 1.95;
+}
+
+.law-font-large .article-point-box {
+  font-size: 16.5px;
+  line-height: 1.8;
+}
+
 .article-title {
   font-size: 15px;
   font-weight: 800;

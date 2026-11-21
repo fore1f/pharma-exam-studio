@@ -482,7 +482,7 @@ async function loadAllExams() {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122i");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122l");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.oxList = [...(state.studyPack.ox_questions || [])];
@@ -1074,6 +1074,22 @@ function bindLawControls() {
     stopBtn.addEventListener("click", () => stopLawAudio());
   }
 
+  const lawFontBtn = document.getElementById("btnLawFontSize");
+  if (lawFontBtn) {
+    lawFontBtn.addEventListener("click", () => {
+      state.largeFont = !state.largeFont;
+      document.getElementById("lawArticlesList").classList.toggle("law-font-large", state.largeFont);
+      document.getElementById("questionCard").classList.toggle("font-large", state.largeFont);
+      const mockCard = document.getElementById("mockQuestionCard");
+      if (mockCard) mockCard.classList.toggle("font-large", state.largeFont);
+      const lbl = state.largeFont ? "🔤 文字サイズ：大" : "🔤 文字サイズ：標準";
+      lawFontBtn.textContent = lbl;
+      document.getElementById("btnToggleFontSize").textContent = lbl;
+      const mf = document.getElementById("btnMockFont");
+      if (mf) mf.textContent = lbl;
+    });
+  }
+
   const backLawBtn = document.getElementById("btnBackToLawArticle");
   if (backLawBtn) {
     backLawBtn.addEventListener("click", () => {
@@ -1257,7 +1273,8 @@ function speakLawIndex(idx, continuous) {
   }
 
   const { lawShort, art } = entry;
-  const rawSpeechText = `${lawShort}、${art.title}、${(art.caption || "").replace(/[（）()]/g, "")}。${art.body}`;
+  const pointSpoken = art.point ? `。試験で覚えるポイント。${art.point}` : "";
+  const rawSpeechText = `${lawShort}、${art.title}、${(art.caption || "").replace(/[（）()]/g, "")}。${art.body}${pointSpoken}`;
   const speechText = normalizeLawSpeechText(rawSpeechText);
   const utter = new SpeechSynthesisUtterance(speechText);
   utter.lang = "ja-JP";
@@ -1390,6 +1407,10 @@ function renderLawArticles() {
         ? `<button type="button" class="btn btn-secondary btn-sm js-law-past-q">📝 関連過去問(${cnt}問)</button>`
         : "";
 
+    const pointHtml = art.point
+      ? `<div class="article-point-box"><span class="article-point-label">💡 試験で覚えるポイント：</span>${escapeHtml(art.point)}</div>`
+      : "";
+
     div.innerHTML = `
       <div class="article-head">
         <div class="article-head-left">
@@ -1404,6 +1425,7 @@ function renderLawArticles() {
         </div>
       </div>
       <div class="article-body">${bodyHtml}</div>
+      ${pointHtml}
     `;
     div.querySelectorAll(".cloze").forEach((span) => {
       span.addEventListener("click", () => span.classList.toggle("revealed"));
