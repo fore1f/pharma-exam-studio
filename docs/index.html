@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122l" />
+  <link rel="stylesheet" href="./styles.css?v=20261122m" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -186,7 +186,7 @@
           </div>
         </div>
 
-        <div class="card" id="questionCard">
+        <div class="card font-large" id="questionCard">
           <div class="q-header">
             <div class="q-badges" id="qBadges"></div>
             <div class="q-tools">
@@ -197,7 +197,7 @@
 
           <div class="q-display-controls">
             <button type="button" class="btn btn-primary btn-sm" id="btnToggleChoiceShuffle">🔀 選択肢シャッフル：ON</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnToggleFontSize">🔤 文字サイズ：標準</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnToggleFontSize">🔤 文字サイズ：大</button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnTogglePdfImg" style="display:none;">📄 元の試験用紙を見る</button>
           </div>
 
@@ -383,7 +383,7 @@
               </div>
 
               <div class="q-display-controls">
-                <button type="button" class="btn btn-secondary btn-sm" id="btnMockFont">🔤 文字サイズ：標準</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnMockFont">🔤 文字サイズ：大</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btnMockPdfToggle" style="display:none;">📄 元の試験用紙を見る</button>
               </div>
 
@@ -475,7 +475,7 @@
             <button type="button" class="btn btn-secondary btn-sm" id="btnLawStopAudio" style="display:none;">⏹ 停止</button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnLawSpeed">速度：1.0x</button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnLawSort">📖 条文順</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnLawFontSize">🔤 文字サイズ：標準</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLawFontSize">🔤 文字サイズ：大</button>
           </div>
         </div>
 
@@ -490,7 +490,7 @@
           </div>
         </div>
 
-        <div id="lawArticlesList" class="redsheet-on"></div>
+        <div id="lawArticlesList" class="redsheet-on law-font-large"></div>
       </section>
 
       <!-- 3. 一問一答・○×演習 -->
@@ -673,6 +673,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122l"></script>
+  <script src="./app.js?v=20261122m"></script>
 </body>
 </html>

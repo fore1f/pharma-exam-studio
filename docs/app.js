@@ -43,7 +43,7 @@ const state = {
   timerHandle: null,
   sessionStartMs: Date.now(),
   shuffleChoices: true,
-  largeFont: false,
+  largeFont: true,
   pdfImgVisible: false,
 
   // 実践試験モード（本番模試）
@@ -482,7 +482,7 @@ async function loadAllExams() {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122l");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122m");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.oxList = [...(state.studyPack.ox_questions || [])];
@@ -1273,8 +1273,9 @@ function speakLawIndex(idx, continuous) {
   }
 
   const { lawShort, art } = entry;
-  const pointSpoken = art.point ? `。試験で覚えるポイント。${art.point}` : "";
-  const rawSpeechText = `${lawShort}、${art.title}、${(art.caption || "").replace(/[（）()]/g, "")}。${art.body}${pointSpoken}`;
+  const tagsSpoken = (art.point_tags || []).length ? `。暗記ワード。${art.point_tags.join("、")}` : "";
+  const trapSpoken = art.point_trap ? `。注意。${art.point_trap}` : "";
+  const rawSpeechText = `${lawShort}、${art.title}、${(art.caption || "").replace(/[（）()]/g, "")}。${art.body}${tagsSpoken}${trapSpoken}`;
   const speechText = normalizeLawSpeechText(rawSpeechText);
   const utter = new SpeechSynthesisUtterance(speechText);
   utter.lang = "ja-JP";
@@ -1407,9 +1408,22 @@ function renderLawArticles() {
         ? `<button type="button" class="btn btn-secondary btn-sm js-law-past-q">📝 関連過去問(${cnt}問)</button>`
         : "";
 
-    const pointHtml = art.point
-      ? `<div class="article-point-box"><span class="article-point-label">💡 試験で覚えるポイント：</span>${escapeHtml(art.point)}</div>`
-      : "";
+    const tags = art.point_tags || [];
+    const trap = art.point_trap || "";
+    const pointHtml =
+      tags.length > 0 || trap
+        ? `<div class="article-point-box">
+            ${
+              tags.length > 0
+                ? `<div class="article-point-tags">
+                    <span style="font-weight:800; color:#b45309; font-size:12px;">🎯 暗記ワード・数字</span>
+                    ${tags.map((t) => `<span class="point-chip">${escapeHtml(t)}</span>`).join("")}
+                  </div>`
+                : ""
+            }
+            ${trap ? `<div class="article-point-trap">⚠️ ${escapeHtml(trap)}</div>` : ""}
+          </div>`
+        : "";
 
     div.innerHTML = `
       <div class="article-head">
