@@ -1221,6 +1221,30 @@ function bindSecretParentTrigger() {
       updateParentMuteUI();
     });
   }
+
+  const clearLocalBtn = document.getElementById("btnClearLocalProgress");
+  if (clearLocalBtn) {
+    clearLocalBtn.addEventListener("click", () => {
+      if (!confirm("この端末（ブラウザ）に保存されている学習記録・模試履歴をすべて0にリセットしますか？\n※Googleスプレッドシートや他の端末の記録は消えません。")) {
+        return;
+      }
+      state.progress = {
+        deviceId: state.progress.deviceId || "dev-" + Math.random().toString(36).slice(2, 10),
+        answers: {},
+        bookmarks: {},
+        memos: {},
+        daily: {},
+        recent: [],
+        mockHistory: [],
+      };
+      saveProgress();
+      renderDashboard();
+      renderMockHistory();
+      applyExamFilter();
+      if (!PARENT_WEBHOOK_URL) renderParentTablesFromLocal();
+      alert("この端末の学習記録を真っさらにリセットしました！");
+    });
+  }
 }
 
 function updateParentMuteUI() {
