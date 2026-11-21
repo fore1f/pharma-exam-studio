@@ -320,7 +320,7 @@ async function init() {
 
 async function loadExamData(examNum) {
   if (state.examCache[examNum]) return state.examCache[examNum];
-  const resp = await fetch(`./data/exams/exam_${examNum}.json?v=20261122a`);
+  const resp = await fetch(`./data/exams/exam_${examNum}.json?v=20261122b`);
   if (!resp.ok) throw new Error(`exam_${examNum}.json load failed`);
   const data = await resp.json();
   state.examCache[examNum] = data.questions || [];

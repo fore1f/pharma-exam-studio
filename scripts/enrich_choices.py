@@ -196,6 +196,36 @@ def scan_pdf_question_hazards(exam_num: int) -> dict[int, dict[str, bool]]:
     return hazards
 
 
+def _clean_page_headers_and_footers(lines: list[str]) -> list[str]:
+    """PDFのページ番号（― 2 ― など）や区分見出し行を除去する。"""
+    cleaned: list[str] = []
+    skip_next_page_num = False
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        # 「― 　 ―」や「― 2 ―」のようなページ番号装飾行
+        if re.fullmatch(r"[―ー−‐\-]+\s*\d*\s*[―ー−‐\-]+", s):
+            skip_next_page_num = True
+            continue
+        if skip_next_page_num and re.fullmatch(r"\d{1,3}", s):
+            skip_next_page_num = False
+            continue
+        skip_next_page_num = False
+        # 単独の区分見出し（必須問題 【...】 等）
+        if re.fullmatch(r"(必須問題|一般問題|薬学理論問題|薬学実践問題).*?【.*?】", s):
+            continue
+        cleaned.append(s)
+
+    # 先頭が「問 N」より前の余計な行なら「問 N」の行から開始するようにトリミング
+    for idx, ln in enumerate(cleaned):
+        if re.match(r"^問\s*[0-9０-９]{1,3}", ln):
+            if idx > 0 and idx <= 3:
+                return cleaned[idx:]
+            break
+    return cleaned
+
+
 def _join_japanese_lines(lines: list[str]) -> str:
     """PDFの折り返し改行を自然な日本語文章に結合する。"""
     out: list[str] = []
@@ -240,7 +270,8 @@ def parse_stem_and_choices_strict(
     if MATH_SYMBOL_RE.search(text) or SUB_SUP_TEXT_RE.search(text):
         return "", [], False, True
 
-    lines = [ln.replace("\u3000", " ").strip() for ln in text.splitlines() if ln.strip()]
+    raw_lines = [ln.replace("\u3000", " ").strip() for ln in text.splitlines() if ln.strip()]
+    lines = _clean_page_headers_and_footers(raw_lines)
     if not lines:
         return "", [], False, True
 
