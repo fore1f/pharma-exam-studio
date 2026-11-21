@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122d" />
+  <link rel="stylesheet" href="./styles.css?v=20261122e" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -362,6 +362,7 @@
               </div>
               <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <span class="mobile-stat-pill" id="mockAnsweredPill">解答済 0 / 10</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnCloudSaveMock" title="別デバイス（iPad⇔スマホ等）で続きを解けるようクラウドへ保存">☁ 途中保存</button>
                 <button type="button" class="btn btn-accent btn-sm" id="btnFinishMock">📝 終了して採点</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btnAbortMock">中断</button>
               </div>
@@ -630,7 +631,7 @@
       <div class="cmp-table-wrap">
         <table class="log-table" id="parentRecentTable">
           <thead>
-            <tr><th>日時</th><th>内容</th><th>科目</th><th>問題</th><th>正誤</th></tr>
+            <tr><th>日時</th><th>端末</th><th>内容</th><th>科目</th><th>問題</th><th>正誤</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -649,6 +650,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122d"></script>
+  <script src="./app.js?v=20261122e"></script>
 </body>
 </html>

@@ -50,6 +50,8 @@ const state = {
   examMode: "practice", // "practice" | "mock"
   currentView: "exam",
   hasMockResult: false,
+  cloudDraft: null,
+  cloudDraftSaveTimer: null,
   mock: {
     active: false,
     title: "",
@@ -165,6 +167,7 @@ function recordActivity(event, qid, subject, isCorrect) {
   const tsFull = `${dKey} ${nowTimeStr()}`;
   state.progress.recent.unshift({
     ts: tsFull,
+    device: getDeviceLabel(),
     event,
     qid: qid || "-",
     subject: subject || "-",
@@ -312,6 +315,7 @@ async function init() {
   renderCompareView();
   renderDashboard();
   refreshMockDraftBanner();
+  checkCloudMockDraft();
 
   // アプリ起動を静かに記録（URLに?report=papaがない通常利用時のみ）
   const params = new URLSearchParams(window.location.search);
@@ -1383,6 +1387,7 @@ function renderParentTables(daily, recent) {
         .map(
           (r) => `<tr>
             <td>${escapeHtml(formatCloudDateTime(r.ts))}</td>
+            <td><span class="badge" style="background:#f1f5f9;color:#334155;">${escapeHtml(r.device || "-")}</span></td>
             <td>${escapeHtml(r.event)}</td>
             <td>${escapeHtml(r.subject)}</td>
             <td>${escapeHtml(r.qid)}</td>
@@ -1390,7 +1395,7 @@ function renderParentTables(daily, recent) {
           </tr>`
         )
         .join("")
-    : `<tr><td colspan="5" style="text-align:center;color:var(--text-sub);">まだ記録がありません</td></tr>`;
+    : `<tr><td colspan="6" style="text-align:center;color:var(--text-sub);">まだ記録がありません</td></tr>`;
 }
 
 // =========================================================================
@@ -1644,16 +1649,27 @@ function bindMockControls() {
 
   document.getElementById("btnResumeMockDraft").addEventListener("click", () => resumeMockFromDraft());
   document.getElementById("btnDiscardMockDraft").addEventListener("click", () => {
-    if (!confirm("保存されている途中の試験データを破棄してもよろしいですか？")) return;
-    clearMockDraft();
+    if (!confirm("保存されている途中の試験データを破棄してもよろしいですか？（クラウド保存も消去されます）")) return;
+    clearMockDraft(true);
     refreshMockDraftBanner();
   });
+
+  const cloudSaveBtn = document.getElementById("btnCloudSaveMock");
+  if (cloudSaveBtn) {
+    cloudSaveBtn.addEventListener("click", () => {
+      recordCurrentMockQuestionTime();
+      saveMockDraft(true);
+      const orig = cloudSaveBtn.textContent;
+      cloudSaveBtn.textContent = isParentMuted() ? "✅ この端末に保存済" : "✅ クラウド保存済";
+      setTimeout(() => (cloudSaveBtn.textContent = orig), 2000);
+    });
+  }
 
   // ページ離脱・バックグラウンド移行時の自動保存＆誤操作防止警告（iPhone/iPad/Android/PC対応）
   window.addEventListener("beforeunload", (e) => {
     if (state.mock.active) {
       recordCurrentMockQuestionTime();
-      saveMockDraft();
+      saveMockDraft(true);
       e.preventDefault();
       e.returnValue = "";
     }
@@ -1661,45 +1677,86 @@ function bindMockControls() {
   window.addEventListener("pagehide", () => {
     if (state.mock.active) {
       recordCurrentMockQuestionTime();
-      saveMockDraft();
+      saveMockDraft(true);
     }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden" && state.mock.active) {
       recordCurrentMockQuestionTime();
-      saveMockDraft();
+      saveMockDraft(true);
     }
   });
 }
 
-function saveMockDraft() {
+function buildCurrentMockDraftObj() {
+  const answersPlain = {};
+  Object.entries(state.mock.answers).forEach(([k, set]) => {
+    if (set && set.size > 0) answersPlain[k] = [...set];
+  });
+  const orderMap = {};
+  Object.entries(state.mock.shuffledMap).forEach(([k, arr]) => {
+    if (Array.isArray(arr)) orderMap[k] = arr.map((c) => c.orig);
+  });
+  const examsUsed = [...new Set(state.mock.questions.map((q) => q.exam))];
+  return {
+    v: 1,
+    savedAt: Date.now(),
+    device: getDeviceLabel(),
+    title: state.mock.title,
+    isHissuFull: state.mock.isHissuFull,
+    examsUsed,
+    qIds: state.mock.questions.map((q) => q.id),
+    orderMap,
+    answers: answersPlain,
+    flags: state.mock.flags,
+    qSpentSec: state.mock.qSpentSec,
+    index: state.mock.index,
+    limitSec: state.mock.limitSec,
+    elapsedSec: Math.max(0, Math.floor((Date.now() - state.mock.startMs) / 1000)),
+  };
+}
+
+function pushMockDraftToCloud(draftJson) {
+  if (!PARENT_WEBHOOK_URL || isParentMuted()) return;
+  try {
+    const body = JSON.stringify({
+      event: "mock_draft_save",
+      draftJson,
+      deviceId: getDeviceLabel(),
+    });
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+      navigator.sendBeacon(PARENT_WEBHOOK_URL, blob);
+    } else {
+      fetch(PARENT_WEBHOOK_URL, {
+        method: "POST",
+        mode: "no-cors",
+        keepalive: true,
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body,
+      }).catch(() => {});
+    }
+  } catch (_) {}
+}
+
+function saveMockDraft(immediateCloud = false) {
   if (!state.mock.active || !state.mock.questions.length) return;
   try {
-    const answersPlain = {};
-    Object.entries(state.mock.answers).forEach(([k, set]) => {
-      if (set && set.size > 0) answersPlain[k] = [...set];
-    });
-    const orderMap = {};
-    Object.entries(state.mock.shuffledMap).forEach(([k, arr]) => {
-      if (Array.isArray(arr)) orderMap[k] = arr.map((c) => c.orig);
-    });
-    const examsUsed = [...new Set(state.mock.questions.map((q) => q.exam))];
-    const draft = {
-      v: 1,
-      savedAt: Date.now(),
-      title: state.mock.title,
-      isHissuFull: state.mock.isHissuFull,
-      examsUsed,
-      qIds: state.mock.questions.map((q) => q.id),
-      orderMap,
-      answers: answersPlain,
-      flags: state.mock.flags,
-      qSpentSec: state.mock.qSpentSec,
-      index: state.mock.index,
-      limitSec: state.mock.limitSec,
-      elapsedSec: Math.max(0, Math.floor((Date.now() - state.mock.startMs) / 1000)),
-    };
-    localStorage.setItem(MOCK_DRAFT_KEY, JSON.stringify(draft));
+    const draft = buildCurrentMockDraftObj();
+    const jsonStr = JSON.stringify(draft);
+    localStorage.setItem(MOCK_DRAFT_KEY, jsonStr);
+    if (!PARENT_WEBHOOK_URL || isParentMuted()) return;
+    if (immediateCloud) {
+      clearTimeout(state.cloudDraftSaveTimer);
+      pushMockDraftToCloud(jsonStr);
+    } else {
+      clearTimeout(state.cloudDraftSaveTimer);
+      state.cloudDraftSaveTimer = setTimeout(() => {
+        if (state.mock.active) {
+          pushMockDraftToCloud(JSON.stringify(buildCurrentMockDraftObj()));
+        }
+      }, 1800);
+    }
   } catch (_) {}
 }
 
@@ -1715,10 +1772,46 @@ function loadMockDraft() {
   }
 }
 
-function clearMockDraft() {
+function getBestAvailableMockDraft() {
+  const local = loadMockDraft();
+  const cloud = state.cloudDraft;
+  if (local && cloud) {
+    return (cloud.savedAt || 0) > (local.savedAt || 0) ? { draft: cloud, fromCloud: true } : { draft: local, fromCloud: false };
+  }
+  if (cloud) return { draft: cloud, fromCloud: true };
+  if (local) return { draft: local, fromCloud: false };
+  return null;
+}
+
+async function checkCloudMockDraft() {
+  if (!PARENT_WEBHOOK_URL || state.mock.active) return;
+  try {
+    const sep = PARENT_WEBHOOK_URL.includes("?") ? "&" : "?";
+    const resp = await fetch(`${PARENT_WEBHOOK_URL}${sep}mode=draft`);
+    const data = await resp.json();
+    if (data && data.ok && data.mockDraft && Array.isArray(data.mockDraft.qIds) && data.mockDraft.qIds.length > 0) {
+      state.cloudDraft = data.mockDraft;
+      refreshMockDraftBanner();
+    }
+  } catch (_) {}
+}
+
+function clearMockDraft(syncCloud = true) {
+  clearTimeout(state.cloudDraftSaveTimer);
+  state.cloudDraft = null;
   try {
     localStorage.removeItem(MOCK_DRAFT_KEY);
   } catch (_) {}
+  if (syncCloud && PARENT_WEBHOOK_URL && !isParentMuted()) {
+    try {
+      fetch(PARENT_WEBHOOK_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ event: "mock_draft_clear", deviceId: getDeviceLabel() }),
+      }).catch(() => {});
+    } catch (_) {}
+  }
 }
 
 function refreshMockDraftBanner() {
@@ -1728,13 +1821,18 @@ function refreshMockDraftBanner() {
     bar.classList.remove("open");
     return;
   }
-  const draft = loadMockDraft();
-  if (!draft) {
+  const best = getBestAvailableMockDraft();
+  if (!best) {
     bar.classList.remove("open");
     return;
   }
+  const { draft, fromCloud } = best;
   const ansCount = Object.keys(draft.answers || {}).length;
-  document.getElementById("mockDraftResumeText").textContent = `⏱ 途中の実践試験があります：${draft.title}`;
+  const devInfo = draft._cloudDevice || draft.device || "";
+  const prefix = fromCloud
+    ? `☁ クラウド途中保存（${devInfo || "別端末"}）`
+    : "⏱ 途中の実践試験があります";
+  document.getElementById("mockDraftResumeText").textContent = `${prefix}：${draft.title}`;
   document.getElementById("mockDraftResumeSub").textContent =
     `解答済 ${ansCount} / ${draft.qIds.length} 問・経過 ${formatMinSec(draft.elapsedSec || 0)}（前回の続きからそのまま再開できます）`;
   bar.classList.add("open");
@@ -1762,11 +1860,12 @@ function updateMockReturnBanners() {
 }
 
 async function resumeMockFromDraft() {
-  const draft = loadMockDraft();
-  if (!draft) {
+  const best = getBestAvailableMockDraft();
+  if (!best) {
     refreshMockDraftBanner();
     return;
   }
+  const draft = best.draft;
   const exams = Array.isArray(draft.examsUsed) && draft.examsUsed.length ? draft.examsUsed : ALL_EXAM_NUMS;
   await Promise.all(exams.map((n) => loadExamData(Number(n))));
 

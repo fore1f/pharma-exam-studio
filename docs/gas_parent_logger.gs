@@ -1,26 +1,35 @@
 /**
- * 【お父さん専用・裏見守り機能】Googleスプレッドシート自動記録＆レポートAPI
+ * 【お父さん専用・裏見守り機能 ＋ 別デバイス途中試験クラウド同期】
+ * Google Apps Script（ウェブアプリ）
  *
- * 設置手順（無料・約3分）:
- * 1. Googleドライブで新しい「Googleスプレッドシート」を作成（名前例：国試勉強ログ）
- * 2. 上部メニュー「拡張機能」→「Apps Script」を開く
- * 3. 元から入っているコードをすべて消して、このファイルの中身をそのまま貼り付けて保存
- * 4. 右上の「デプロイ」→「新しいデプロイ」をクリック
- * 5. 種類の歯車アイコンから「ウェブアプリ」を選択
- *    - 実行するユーザー：自分
- *    - アクセスできるユーザー：全員
- *    にして「デプロイ」を押す（初回のみGoogleの承認画面が出るので「詳細」→「移動」で許可）
- * 6. 表示された「ウェブアプリのURL（https://script.google.com/macros/s/.../exec）」をコピーし、
- *    docs/app.js の PARENT_WEBHOOK_URL に貼り付ければ完了！
- *
- * ※スプレッドシートの「ログ」シートに全記録、「日別サマリー」シートに毎日の勉強量が自動集計されます。
- * ※さらに、アプリのURL末尾に ?report=papa を付けて開くと、お父さんのスマホからも
- *   リアルタイムの勉強レポートを閲覧できます！
+ * 更新手順（30秒・URLは変わりません！）:
+ * 1. Apps Script画面のコードをすべて消して、下のコードを貼り付けて保存（Ctrl+S）
+ * 2. 右上「デプロイ」→「デプロイを管理」→ 鉛筆アイコン（編集）
+ * 3. 「バージョン」を「新バージョン」に変更して「デプロイ」を押すだけで完了！
  */
 
 function doPost(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var data = JSON.parse(e.postData.contents);
+
+    // 1. 別デバイス継続用：実践試験の途中経過クラウド保存
+    if (data.event === "mock_draft_save") {
+      saveMockDraftSheet_(ss, data.draftJson || "", data.deviceId || "");
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, mode: "draft_saved" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 2. 別デバイス継続用：途中経過のクリア（採点完了・中断・破棄時）
+    if (data.event === "mock_draft_clear") {
+      clearMockDraftSheet_(ss);
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, mode: "draft_cleared" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 3. 通常の学習ログ記録（お父さん見守り用）
     var logSheet = ss.getSheetByName("ログ");
     if (!logSheet) {
       logSheet = ss.insertSheet("ログ");
@@ -31,7 +40,6 @@ function doPost(e) {
       logSheet.setFrozenRows(1);
     }
 
-    var data = JSON.parse(e.postData.contents);
     var now = new Date();
     var ts = Utilities.formatDate(now, "Asia/Tokyo", "yyyy-MM-dd HH:mm:ss");
     var dateStr = Utilities.formatDate(now, "Asia/Tokyo", "yyyy-MM-dd");
@@ -65,6 +73,17 @@ function doPost(e) {
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var mode = (e && e.parameter && e.parameter.mode) ? String(e.parameter.mode) : "";
+
+    // お子さんの別デバイス起動時：途中保存データだけを軽量取得（見守りログは返さない）
+    if (mode === "draft") {
+      var draftObj = readMockDraftSheet_(ss);
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, mockDraft: draftObj }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // お父さん専用レポート取得
     var logSheet = ss.getSheetByName("ログ");
     var dailySheet = ss.getSheetByName("日別サマリー");
 
@@ -85,7 +104,8 @@ function doGet(e) {
           todayCount: Number(r[6]) || 0,
           totalCount: Number(r[7]) || 0,
           accuracy: Number(r[8]) || 0,
-          todayMinutes: Number(r[9]) || 0
+          todayMinutes: Number(r[9]) || 0,
+          device: String(r[10] || "")
         });
       }
     }
@@ -107,12 +127,52 @@ function doGet(e) {
     }
 
     return ContentService
-      .createTextOutput(JSON.stringify({ ok: true, daily: daily, recentLogs: recentLogs }))
+      .createTextOutput(JSON.stringify({
+        ok: true,
+        daily: daily,
+        recentLogs: recentLogs,
+        mockDraft: readMockDraftSheet_(ss)
+      }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService
       .createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function saveMockDraftSheet_(ss, draftJson, deviceId) {
+  var sheet = ss.getSheetByName("途中保存");
+  if (!sheet) {
+    sheet = ss.insertSheet("途中保存");
+    sheet.appendRow(["更新日時", "端末", "途中データJSON"]);
+    sheet.setFrozenRows(1);
+  }
+  var ts = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy-MM-dd HH:mm:ss");
+  sheet.getRange(2, 1, 1, 3).setValues([[ts, deviceId, draftJson]]);
+}
+
+function clearMockDraftSheet_(ss) {
+  var sheet = ss.getSheetByName("途中保存");
+  if (!sheet) return;
+  if (sheet.getLastRow() >= 2) {
+    sheet.getRange(2, 1, 1, 3).clearContent();
+  }
+}
+
+function readMockDraftSheet_(ss) {
+  var sheet = ss.getSheetByName("途中保存");
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  var row = sheet.getRange(2, 1, 1, 3).getValues()[0];
+  var raw = String(row[2] || "").trim();
+  if (!raw) return null;
+  try {
+    var parsed = JSON.parse(raw);
+    parsed._cloudUpdatedAt = String(row[0] || "");
+    parsed._cloudDevice = String(row[1] || "");
+    return parsed;
+  } catch (e) {
+    return null;
   }
 }
 
