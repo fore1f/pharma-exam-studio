@@ -190,7 +190,11 @@ function updateDailySummary_(ss, dateStr, data) {
   if (lastRow > 1) {
     var dates = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (var i = dates.length - 1; i >= 0; i--) {
-      if (String(dates[i][0]) === dateStr) {
+      var cellVal = dates[i][0];
+      var cellDateStr = (cellVal instanceof Date)
+        ? Utilities.formatDate(cellVal, "Asia/Tokyo", "yyyy-MM-dd")
+        : String(cellVal).trim();
+      if (cellDateStr === dateStr) {
         foundRow = i + 2;
         break;
       }
@@ -203,7 +207,7 @@ function updateDailySummary_(ss, dateStr, data) {
   var mins = Number(data.todayMinutes) || 0;
 
   if (foundRow === -1) {
-    sheet.appendRow([dateStr, addAns, addCor, mins, nowStr]);
+    sheet.appendRow(["'" + dateStr, addAns, addCor, mins, "'" + nowStr]);
   } else {
     var curAns = Number(sheet.getRange(foundRow, 2).getValue()) || 0;
     var curCor = Number(sheet.getRange(foundRow, 3).getValue()) || 0;
@@ -211,6 +215,6 @@ function updateDailySummary_(ss, dateStr, data) {
     sheet.getRange(foundRow, 2).setValue(curAns + addAns);
     sheet.getRange(foundRow, 3).setValue(curCor + addCor);
     sheet.getRange(foundRow, 4).setValue(Math.max(curMin, mins));
-    sheet.getRange(foundRow, 5).setValue(nowStr);
+    sheet.getRange(foundRow, 5).setValue("'" + nowStr);
   }
 }
