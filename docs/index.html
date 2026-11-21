@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261121b" />
+  <link rel="stylesheet" href="./styles.css?v=20261121c" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -201,12 +201,44 @@
         <div id="mockContainer" style="display:none;">
           <!-- 開始前セットアップ画面 -->
           <div id="mockSetupPanel" class="card">
-            <h2 class="page-title" style="font-size:20px;">⏱ 実践試験モード（本番タイム計測・全問一括採点）</h2>
-            <p class="page-subtitle" style="margin-bottom:12px;">
-              開始ボタンから全問解答し終えるまでの所要時間・1問あたりペースを計測し、最後にまとめて一括採点します。
-            </p>
+            <div class="full-mock-box">
+              <h3>🏫 本番フル模試（国家試験そのままの時間割＆問題数）</h3>
+              <p>試験回（第102〜111回）と本番ブロックを選んでスタート！開始を押すと10秒前カウントダウンから本番そのままに始まります。</p>
+              <div class="filter-grid" style="margin-bottom:14px;">
+                <div class="field">
+                  <label for="fullMockExam">試験回を選択（10年分）</label>
+                  <select id="fullMockExam">
+                    <option value="111" selected>第111回（令和8年・2026年）</option>
+                    <option value="110">第110回（令和7年・2025年）</option>
+                    <option value="109">第109回（令和6年・2024年）</option>
+                    <option value="108">第108回（令和5年・2023年）</option>
+                    <option value="107">第107回（令和4年・2022年）</option>
+                    <option value="106">第106回（令和3年・2021年）</option>
+                    <option value="105">第105回（令和2年・2020年）</option>
+                    <option value="104">第104回（平成31年・2019年）</option>
+                    <option value="103">第103回（平成30年・2018年）</option>
+                    <option value="102">第102回（平成29年・2017年）</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="fullMockBlock">本番試験ブロック（問題範囲・制限時間）</label>
+                  <select id="fullMockBlock">
+                    <option value="day1_1" selected>1日目① 必須問題（問1〜90 ／ 90問・90分）</option>
+                    <option value="day1_2">1日目② 薬学理論問題①（問91〜150 ／ 60問・150分）</option>
+                    <option value="day1_3">1日目③ 薬学理論問題②（問151〜195 ／ 45問・115分）</option>
+                    <option value="day2_1">2日目① 薬学実践問題①（問196〜245 ／ 50問・125分）</option>
+                    <option value="day2_2">2日目② 薬学実践問題②（問246〜285 ／ 40問・100分）</option>
+                    <option value="day2_3">2日目③ 薬学実践問題③（問286〜345 ／ 60問・150分）</option>
+                    <option value="all_345">全科目 通しフル模試（問1〜345 ／ 345問・730分）</option>
+                  </select>
+                </div>
+              </div>
+              <button type="button" class="full-mock-start-btn" id="btnStartFullMock">
+                ▶ 本番フル模試を開始する（10秒カウントダウン）
+              </button>
+            </div>
 
-            <h3 style="margin:10px 0 6px; font-size:14px; color:var(--text-sub);">ワンタップ模試プリセット（本番と同じ時間配分）</h3>
+            <h3 style="margin:14px 0 6px; font-size:14px; color:var(--text-sub);">スキマ時間向け・短時間ミニ模試</h3>
             <div class="mock-preset-grid">
               <button type="button" class="mock-preset-card" id="presetHissu10">
                 <h4>🔥 必須ミニ模試（10問 / 10分）</h4>
@@ -215,10 +247,6 @@
               <button type="button" class="mock-preset-card" id="presetLaw15">
                 <h4>⚖️ 法規・制度 集中模試（15問 / 20分）</h4>
                 <p>試験に出る法規問題を10年分からランダム15問</p>
-              </button>
-              <button type="button" class="mock-preset-card" id="presetHissu90">
-                <h4>🏫 本番フル必須模試（90問 / 90分）</h4>
-                <p>最新・第111回の必須問題（問1〜90）を本番そのまま</p>
               </button>
               <button type="button" class="mock-preset-card" id="presetRiron20">
                 <h4>🧪 理論スピード模試（20問 / 35分）</h4>
@@ -338,10 +366,29 @@
                 <button type="button" class="btn btn-primary" id="btnMockNext">次の問題 →</button>
               </div>
 
-              <div style="font-size:11px; color:var(--text-sub); margin-top:10px;">
-                問題番号ジャンプ（緑＝解答済 ／ 黄＝見直しチェック ／ 白＝未解答）
+              <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-top:12px;">
+                <span style="font-size:11px; color:var(--text-sub);">
+                  問題番号ジャンプ（緑＝解答済 ／ 黄＝🚩見直し ／ 白＝未解答）
+                </span>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnJumpUnanswered">⬜ 次の未解答へ</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnJumpFlagged">🚩 次の見直しへ</button>
+                </div>
               </div>
               <div id="mockPalette" class="mock-palette"></div>
+            </div>
+          </div>
+
+          <!-- 過去の模試履歴（セットアップ画面下に表示） -->
+          <div id="mockHistoryCard" class="card" style="display:none;">
+            <h3 style="margin:0 0 8px; font-size:15px;">📈 これまでの実践試験（模試）スコア履歴</h3>
+            <div class="cmp-table-wrap">
+              <table class="log-table" id="mockHistoryTable">
+                <thead>
+                  <tr><th>日時</th><th>試験名</th><th>得点</th><th>正答率</th><th>所要時間</th><th>判定</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
             </div>
           </div>
 
@@ -364,7 +411,7 @@
               <div class="cmp-table-wrap">
                 <table class="log-table" id="mockResultTable">
                   <thead>
-                    <tr><th>#</th><th>試験回・問</th><th>科目</th><th>判定</th><th>公式正答</th><th>操作</th></tr>
+                    <tr><th>#</th><th>試験回・問</th><th>科目</th><th>判定</th><th>所要</th><th>公式正答</th><th>操作</th></tr>
                   </thead>
                   <tbody></tbody>
                 </table>
@@ -556,6 +603,17 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261121b"></script>
+  <!-- 10-Second Exam Start Countdown Overlay -->
+  <div class="countdown-overlay" id="countdownOverlay">
+    <div class="countdown-title" id="cdExamTitle">第111回 1日目① 必須問題</div>
+    <div class="countdown-sub" id="cdSubText">深呼吸して準備してください… 試験開始まで</div>
+    <div class="countdown-num" id="cdNumber">10</div>
+    <div class="countdown-actions">
+      <button type="button" class="btn btn-secondary btn-sm" id="btnCdCancel">キャンセル</button>
+      <button type="button" class="btn btn-accent btn-sm" id="btnCdSkip">今すぐ開始</button>
+    </div>
+  </div>
+
+  <script src="./app.js?v=20261121c"></script>
 </body>
 </html>
