@@ -44,6 +44,24 @@ const state = {
   largeFont: false,
   pdfImgVisible: false,
 
+  // 実践試験モード（本番模試）
+  examMode: "practice", // "practice" | "mock"
+  mock: {
+    active: false,
+    title: "",
+    questions: [],
+    shuffledMap: {}, // idx -> shuffled choices array
+    answers: {}, // idx -> Set<number>
+    flags: {}, // idx -> bool
+    index: 0,
+    startMs: 0,
+    limitSec: 0, // 0 = 無制限
+    elapsedSec: 0,
+    timerHandle: null,
+    pdfVisible: false,
+    lastWrongQuestions: [],
+  },
+
   // 法令・○×・比較表
   studyPack: null,
   activeLawIdx: 1, // デフォルトで薬機法を選択（-1 = 全法令横断）
@@ -234,6 +252,7 @@ async function init() {
 
   bindNavigation();
   bindExamControls();
+  bindMockControls();
   bindLawControls();
   bindOxControls();
   bindCompareControls();
@@ -1264,6 +1283,558 @@ function renderParentTables(daily, recent) {
         )
         .join("")
     : `<tr><td colspan="5" style="text-align:center;color:var(--text-sub);">まだ記録がありません</td></tr>`;
+}
+
+// =========================================================================
+// 実践試験モード（本番模試・タイム計測・一括採点）
+// =========================================================================
+function bindMockControls() {
+  const tabPrac = document.getElementById("tabPracticeMode");
+  const tabMock = document.getElementById("tabMockMode");
+  if (!tabPrac || !tabMock) return;
+
+  tabPrac.addEventListener("click", () => switchExamSubMode("practice"));
+  tabMock.addEventListener("click", () => switchExamSubMode("mock"));
+
+  document.getElementById("presetHissu10").addEventListener("click", async () => {
+    await startMockByConfig({
+      title: "必須ミニ模試（10問）",
+      exam: "all",
+      section: "必須",
+      subject: "all",
+      count: 10,
+      limitMin: 10,
+      shuffleOrder: true,
+    });
+  });
+
+  document.getElementById("presetLaw15").addEventListener("click", async () => {
+    await startMockByConfig({
+      title: "法規・制度 集中模試（15問）",
+      exam: "all",
+      section: "all",
+      subject: "法規・制度・倫理",
+      count: 15,
+      limitMin: 20,
+      shuffleOrder: true,
+    });
+  });
+
+  document.getElementById("presetHissu90").addEventListener("click", async () => {
+    await startMockByConfig({
+      title: "第111回 本番フル必須模試（90問）",
+      exam: "111",
+      section: "必須",
+      subject: "all",
+      count: 90,
+      limitMin: 90,
+      shuffleOrder: false,
+    });
+  });
+
+  document.getElementById("presetRiron20").addEventListener("click", async () => {
+    await startMockByConfig({
+      title: "薬学理論スピード模試（20問）",
+      exam: "all",
+      section: "理論",
+      subject: "all",
+      count: 20,
+      limitMin: 35,
+      shuffleOrder: true,
+    });
+  });
+
+  document.getElementById("btnStartCustomMock").addEventListener("click", async () => {
+    const exam = document.getElementById("mExam").value;
+    const section = document.getElementById("mSection").value;
+    const subject = document.getElementById("mSubject").value;
+    const count = Number(document.getElementById("mCount").value) || 10;
+    const limitVal = document.getElementById("mTimeLimit").value;
+
+    let limitMin = 0;
+    if (limitVal === "auto") {
+      const perQ = section === "必須" ? 1 : 2;
+      limitMin = count * perQ;
+    } else {
+      limitMin = Number(limitVal) || 0;
+    }
+
+    const labelExam = exam === "all" ? "10年分" : `第${exam}回`;
+    const labelSubj = subject === "all" ? (section === "all" ? "全範囲" : `${section}問題`) : subject;
+    await startMockByConfig({
+      title: `${labelExam} ${labelSubj} 模試`,
+      exam,
+      section,
+      subject,
+      count,
+      limitMin,
+      shuffleOrder: exam === "all",
+    });
+  });
+
+  document.getElementById("btnMockPrev").addEventListener("click", () => {
+    if (state.mock.index > 0) {
+      state.mock.index -= 1;
+      renderMockQuestion();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
+
+  document.getElementById("btnMockNext").addEventListener("click", () => {
+    if (state.mock.index < state.mock.questions.length - 1) {
+      state.mock.index += 1;
+      renderMockQuestion();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
+
+  document.getElementById("btnMockFlag").addEventListener("click", () => {
+    const i = state.mock.index;
+    state.mock.flags[i] = !state.mock.flags[i];
+    updateMockFlagBtn();
+    renderMockPalette();
+  });
+
+  document.getElementById("btnMockFont").addEventListener("click", () => {
+    state.largeFont = !state.largeFont;
+    document.getElementById("mockQuestionCard").classList.toggle("font-large", state.largeFont);
+    document.getElementById("questionCard").classList.toggle("font-large", state.largeFont);
+    const label = state.largeFont ? "🔤 文字サイズ：大" : "🔤 文字サイズ：標準";
+    document.getElementById("btnMockFont").textContent = label;
+    document.getElementById("btnToggleFontSize").textContent = label;
+  });
+
+  document.getElementById("btnMockPdfToggle").addEventListener("click", () => {
+    state.mock.pdfVisible = !state.mock.pdfVisible;
+    document.getElementById("mqImages").style.display = state.mock.pdfVisible ? "flex" : "none";
+    document.getElementById("btnMockPdfToggle").textContent = state.mock.pdfVisible
+      ? "📄 試験用紙を隠す"
+      : "📄 元の試験用紙を見る";
+  });
+
+  document.getElementById("btnFinishMock").addEventListener("click", () => {
+    const total = state.mock.questions.length;
+    const answered = countMockAnswered();
+    if (answered < total) {
+      const ok = confirm(`まだ未解答の問題が ${total - answered} 問あります。このまま終了して一括採点しますか？`);
+      if (!ok) return;
+    }
+    finishMockExam(false);
+  });
+
+  document.getElementById("btnAbortMock").addEventListener("click", () => {
+    if (!confirm("進行中の試験を中断して最初の画面に戻りますか？")) return;
+    clearInterval(state.mock.timerHandle);
+    state.mock.active = false;
+    document.getElementById("mockRunPanel").style.display = "none";
+    document.getElementById("mockResultPanel").style.display = "none";
+    document.getElementById("mockSetupPanel").style.display = "block";
+  });
+
+  document.getElementById("btnMockBackToSetup").addEventListener("click", () => {
+    document.getElementById("mockResultPanel").style.display = "none";
+    document.getElementById("mockSetupPanel").style.display = "block";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  document.getElementById("btnMockReviewWrong").addEventListener("click", () => {
+    if (!state.mock.lastWrongQuestions.length) {
+      alert("間違えた問題はありません！満点おめでとうございます🎉");
+      return;
+    }
+    state.filteredQuestions = [...state.mock.lastWrongQuestions];
+    state.currentIndex = 0;
+    document.getElementById("examMatchCount").textContent = `模試で間違えた ${state.filteredQuestions.length} 問を復習中`;
+    switchExamSubMode("practice");
+    renderCurrentQuestion();
+  });
+}
+
+function switchExamSubMode(mode) {
+  state.examMode = mode;
+  document.getElementById("tabPracticeMode").classList.toggle("active", mode === "practice");
+  document.getElementById("tabMockMode").classList.toggle("active", mode === "mock");
+  document.getElementById("practiceContainer").style.display = mode === "practice" ? "block" : "none";
+  document.getElementById("mockContainer").style.display = mode === "mock" ? "block" : "none";
+}
+
+async function startMockByConfig({ title, exam, section, subject, count, limitMin, shuffleOrder }) {
+  let pool = [];
+  if (exam === "all") {
+    await loadAllExams();
+    pool = ALL_EXAM_NUMS.flatMap((n) => state.examCache[n] || []);
+  } else {
+    pool = await loadExamData(Number(exam));
+  }
+
+  let filtered = pool.filter((q) => {
+    if (q.multi_mode === "none") return false;
+    if (section !== "all" && q.section !== section) return false;
+    if (subject !== "all" && q.subject !== subject) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    alert("選択した条件に合う問題がありません。条件を変えてお試しください。");
+    return;
+  }
+
+  if (shuffleOrder) {
+    shuffleArray(filtered);
+  }
+  const selected = filtered.slice(0, Math.min(count, filtered.length));
+
+  // 各問題のシャッフル順を試験開始時に固定
+  const shuffledMap = {};
+  selected.forEach((q, idx) => {
+    if (q.can_shuffle && q.choices && q.choices.length > 0) {
+      const list = q.choices.map((c) => ({ ...c }));
+      if (state.shuffleChoices) shuffleArray(list);
+      shuffledMap[idx] = list;
+    }
+  });
+
+  clearInterval(state.mock.timerHandle);
+  state.mock.active = true;
+  state.mock.title = `${title}（全${selected.length}問）`;
+  state.mock.questions = selected;
+  state.mock.shuffledMap = shuffledMap;
+  state.mock.answers = {};
+  state.mock.flags = {};
+  state.mock.index = 0;
+  state.mock.startMs = Date.now();
+  state.mock.limitSec = limitMin > 0 ? limitMin * 60 : 0;
+  state.mock.elapsedSec = 0;
+
+  document.getElementById("mockTitleLabel").textContent = state.mock.title;
+  document.getElementById("mockSetupPanel").style.display = "none";
+  document.getElementById("mockResultPanel").style.display = "none";
+  document.getElementById("mockRunPanel").style.display = "block";
+  document.getElementById("mockQuestionCard").classList.toggle("font-large", state.largeFont);
+
+  updateMockClock();
+  state.mock.timerHandle = setInterval(() => {
+    state.mock.elapsedSec = Math.floor((Date.now() - state.mock.startMs) / 1000);
+    updateMockClock();
+    if (state.mock.limitSec > 0 && state.mock.elapsedSec >= state.mock.limitSec) {
+      clearInterval(state.mock.timerHandle);
+      alert("⏰ 制限時間になりました！自動で一括採点を行います。");
+      finishMockExam(true);
+    }
+  }, 1000);
+
+  recordActivity("mock_start", `${selected.length}問`, state.mock.title, null);
+  renderMockQuestion();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function formatMinSec(sec) {
+  const s = Math.max(0, sec);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
+
+function updateMockClock() {
+  const el = document.getElementById("mockClockLabel");
+  if (!el) return;
+  const elapsedStr = formatMinSec(state.mock.elapsedSec);
+  if (state.mock.limitSec > 0) {
+    const rem = Math.max(0, state.mock.limitSec - state.mock.elapsedSec);
+    el.textContent = `経過 ${elapsedStr} ／ 残り ${formatMinSec(rem)}`;
+  } else {
+    el.textContent = `経過時間 ${elapsedStr}`;
+  }
+  document.getElementById("mockAnsweredPill").textContent = `解答済 ${countMockAnswered()} / ${state.mock.questions.length}`;
+}
+
+function countMockAnswered() {
+  return Object.values(state.mock.answers).filter((set) => set && set.size > 0).length;
+}
+
+function updateMockFlagBtn() {
+  const active = Boolean(state.mock.flags[state.mock.index]);
+  const btn = document.getElementById("btnMockFlag");
+  btn.classList.toggle("active", active);
+  btn.textContent = active ? "🚩 見直しチェック済" : "🚩 見直しチェック";
+}
+
+function renderMockQuestion() {
+  const i = state.mock.index;
+  const q = state.mock.questions[i];
+  if (!q) return;
+
+  document.getElementById("mqBadges").innerHTML = `
+    <span class="badge badge-exam">問題 ${i + 1} / ${state.mock.questions.length}</span>
+    <span class="badge badge-sec">第${q.exam}回 問${q.q_no}（${q.section}）</span>
+    <span class="badge badge-subj">${q.subject}</span>
+    ${q.select_count > 1 ? `<span class="badge badge-multi">${q.select_count}つ選択</span>` : ""}
+  `;
+  updateMockFlagBtn();
+
+  const list = state.mock.shuffledMap[i];
+  const useTextMode = Boolean(list && q.stem);
+  const stemBox = document.getElementById("mqStemBox");
+  const imgBox = document.getElementById("mqImages");
+  const pdfBtn = document.getElementById("btnMockPdfToggle");
+
+  imgBox.innerHTML = "";
+  (q.images || []).forEach((src, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "q-img-wrap";
+    if (q.has_lead && src.includes("lead_")) {
+      const tag = document.createElement("div");
+      tag.className = "lead-tag";
+      tag.textContent = "📌 共通の症例・処方箋・リード文（タップで拡大）";
+      wrap.appendChild(tag);
+    }
+    const img = document.createElement("img");
+    img.src = `./${src}`;
+    img.alt = `第${q.exam}回 問${q.q_no}`;
+    img.loading = idx === 0 ? "eager" : "lazy";
+    img.addEventListener("click", () => {
+      document.getElementById("zoomImgTarget").src = img.src;
+      document.getElementById("zoomModal").classList.add("open");
+    });
+    wrap.appendChild(img);
+    imgBox.appendChild(wrap);
+  });
+
+  if (useTextMode) {
+    stemBox.style.display = "block";
+    stemBox.textContent = q.stem;
+    state.mock.pdfVisible = Boolean(q.show_img_alongside);
+    imgBox.style.display = state.mock.pdfVisible ? "flex" : "none";
+    pdfBtn.style.display = "inline-flex";
+    pdfBtn.textContent = state.mock.pdfVisible ? "📄 試験用紙を隠す" : "📄 元の試験用紙を見る";
+  } else {
+    stemBox.style.display = "none";
+    state.mock.pdfVisible = true;
+    imgBox.style.display = "flex";
+    pdfBtn.style.display = "none";
+  }
+
+  document.getElementById("mqSelectHint").textContent =
+    q.select_count > 1
+      ? `選択肢から ${q.select_count}つ 選んで次へ進んでください（採点は終了後にまとめて行います）`
+      : "選択肢から 1つ 選んで次へ進んでください（採点は終了後にまとめて行います）";
+
+  const chosenSet = state.mock.answers[i] || new Set();
+  const choicesEl = document.getElementById("mqChoices");
+  choicesEl.innerHTML = "";
+  const letters = ["A", "B", "C", "D", "E", "F"];
+
+  if (useTextMode) {
+    choicesEl.className = "choices-cards";
+    list.forEach((item, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `choice-card-btn ${chosenSet.has(item.orig) ? "selected" : ""}`;
+      btn.dataset.choice = String(item.orig);
+      const lbl = state.shuffleChoices ? letters[idx] || String(idx + 1) : String(item.orig);
+      btn.innerHTML = `<span class="choice-label-badge">${lbl}</span><span>${escapeHtml(item.text)}</span>`;
+      btn.addEventListener("click", () => toggleMockChoice(i, item.orig, q.select_count));
+      choicesEl.appendChild(btn);
+    });
+  } else {
+    choicesEl.className = "choices-bar";
+    const numChoices = Math.max(5, q.max_choice || 5);
+    for (let c = 1; c <= numChoices; c++) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `choice-btn ${chosenSet.has(c) ? "selected" : ""}`;
+      btn.textContent = String(c);
+      btn.dataset.choice = String(c);
+      btn.addEventListener("click", () => toggleMockChoice(i, c, q.select_count));
+      choicesEl.appendChild(btn);
+    }
+  }
+
+  document.getElementById("mqPagerInfo").textContent = `${i + 1} / ${state.mock.questions.length}`;
+  document.getElementById("btnMockPrev").disabled = i === 0;
+  document.getElementById("btnMockNext").textContent =
+    i === state.mock.questions.length - 1 ? "最終問題です（上の終了ボタンで採点）" : "次の問題 →";
+  document.getElementById("btnMockNext").disabled = i === state.mock.questions.length - 1;
+
+  renderMockPalette();
+  updateMockClock();
+}
+
+function toggleMockChoice(idx, choiceNum, maxSelect) {
+  if (!state.mock.answers[idx]) state.mock.answers[idx] = new Set();
+  const set = state.mock.answers[idx];
+  if (maxSelect === 1) {
+    set.clear();
+    set.add(choiceNum);
+  } else {
+    if (set.has(choiceNum)) set.delete(choiceNum);
+    else {
+      if (set.size >= maxSelect) {
+        const first = set.values().next().value;
+        set.delete(first);
+      }
+      set.add(choiceNum);
+    }
+  }
+  document.querySelectorAll("#mqChoices button[data-choice]").forEach((btn) => {
+    const c = Number(btn.dataset.choice);
+    btn.classList.toggle("selected", set.has(c));
+  });
+  renderMockPalette();
+  updateMockClock();
+}
+
+function renderMockPalette() {
+  const pal = document.getElementById("mockPalette");
+  pal.innerHTML = "";
+  state.mock.questions.forEach((_, idx) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "palette-num";
+    if (idx === state.mock.index) btn.classList.add("current");
+    if (state.mock.flags[idx]) btn.classList.add("flagged");
+    else if (state.mock.answers[idx] && state.mock.answers[idx].size > 0) btn.classList.add("answered");
+    btn.textContent = String(idx + 1);
+    btn.addEventListener("click", () => {
+      state.mock.index = idx;
+      renderMockQuestion();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    pal.appendChild(btn);
+  });
+}
+
+function finishMockExam(timeUp) {
+  clearInterval(state.mock.timerHandle);
+  state.mock.active = false;
+  const elapsedSec = Math.max(1, Math.floor((Date.now() - state.mock.startMs) / 1000));
+  const total = state.mock.questions.length;
+  let correctCount = 0;
+  const bySubj = {};
+  const wrongList = [];
+  const rowsHtml = [];
+
+  state.mock.questions.forEach((q, idx) => {
+    const chosen = [...(state.mock.answers[idx] || new Set())].sort((a, b) => a - b);
+    const official = [...(q.answers || [])].sort((a, b) => a - b);
+    let isCorrect = false;
+    if (chosen.length > 0) {
+      if (q.multi_mode === "any") isCorrect = chosen.every((c) => official.includes(c));
+      else isCorrect = chosen.length === official.length && chosen.every((c, k) => c === official[k]);
+    }
+
+    if (isCorrect) correctCount += 1;
+    else wrongList.push(q);
+
+    if (!bySubj[q.subject]) bySubj[q.subject] = { total: 0, correct: 0 };
+    bySubj[q.subject].total += 1;
+    if (isCorrect) bySubj[q.subject].correct += 1;
+
+    // 通常の学習履歴にも反映
+    state.progress.answers[q.id] = {
+      correct: isCorrect,
+      chosen,
+      subject: q.subject,
+      ts: Date.now(),
+    };
+
+    const statusBadge =
+      chosen.length === 0
+        ? `<span style="color:#64748b; font-weight:700;">未解答</span>`
+        : isCorrect
+        ? `<span style="color:#059669; font-weight:800;">⭕ 正解</span>`
+        : `<span style="color:#dc2626; font-weight:800;">❌ 不正解</span>`;
+
+    rowsHtml.push(`
+      <tr>
+        <td>${idx + 1}</td>
+        <td><strong>第${q.exam}回 問${q.q_no}</strong></td>
+        <td>${escapeHtml(q.subject)}</td>
+        <td>${statusBadge}</td>
+        <td>${official.join("・")}</td>
+        <td><button type="button" class="btn btn-secondary btn-sm js-mock-open-q" data-idx="${idx}">復習・解説</button></td>
+      </tr>
+    `);
+  });
+
+  state.mock.lastWrongQuestions = wrongList;
+  const pct = Math.round((correctCount / total) * 100);
+  const avgSec = Math.round(elapsedSec / total);
+  const passLine = state.mock.title.includes("必須") ? 70 : 65;
+  const isPass = pct >= passLine;
+
+  // 日別カウント＆お父さんの裏見守りレポートに模試結果を送信
+  const dKey = todayKey();
+  if (!state.progress.daily[dKey]) {
+    state.progress.daily[dKey] = { count: 0, correct: 0, minutes: 1, lastActive: nowTimeStr() };
+  }
+  state.progress.daily[dKey].count += total;
+  state.progress.daily[dKey].correct += correctCount;
+  state.progress.daily[dKey].minutes = Math.max(
+    state.progress.daily[dKey].minutes || 0,
+    Math.max(1, Math.ceil(elapsedSec / 60))
+  );
+  recordActivity(
+    "mock_finish",
+    `${correctCount}/${total} (${pct}%) ${formatMinSec(elapsedSec)}`,
+    state.mock.title,
+    isPass
+  );
+
+  // 結果画面描画
+  const hero = document.getElementById("mockResultHero");
+  hero.className = `mock-result-hero ${isPass ? "pass" : "fail"}`;
+  hero.innerHTML = `
+    <div style="font-size:13px; font-weight:800; color:${isPass ? "#065f46" : "#991b1b"};">
+      ${escapeHtml(state.mock.title)}${timeUp ? "（時間終了）" : ""}
+    </div>
+    <div class="mock-score-big" style="color:${isPass ? "#059669" : "#dc2626"};">
+      ${correctCount} / ${total} 問（${pct}%）
+    </div>
+    <div style="font-size:14px; font-weight:700; color:${isPass ? "#065f46" : "#991b1b"};">
+      ${isPass ? `🎉 合格基準目安（${passLine}%以上）クリア！素晴らしいペースです！` : `💪 合格基準目安（${passLine}%以上）まであと少し！間違えた問題をすぐ復習しましょう`}
+    </div>
+  `;
+
+  document.getElementById("mockResultKpis").innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">所要時間（開始〜終了）</div><div class="kpi-val">${formatMinSec(elapsedSec)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">1問あたり平均時間</div><div class="kpi-val">${avgSec}秒</div></div>
+    <div class="kpi-card"><div class="kpi-label">正解数</div><div class="kpi-val" style="color:var(--success);">${correctCount}問</div></div>
+    <div class="kpi-card"><div class="kpi-label">間違い・未解答</div><div class="kpi-val" style="color:var(--danger);">${wrongList.length}問</div></div>
+  `;
+
+  const subjEl = document.getElementById("mockResultSubjects");
+  subjEl.innerHTML = "";
+  Object.entries(bySubj).forEach(([sub, d]) => {
+    const sp = Math.round((d.correct / d.total) * 100);
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML = `
+      <span style="font-weight:700;">${escapeHtml(sub)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${sp}%;"></div></div>
+      <span style="text-align:right; font-weight:700;">${sp}% (${d.correct}/${d.total})</span>
+    `;
+    subjEl.appendChild(row);
+  });
+
+  const tbody = document.querySelector("#mockResultTable tbody");
+  tbody.innerHTML = rowsHtml.join("");
+  tbody.querySelectorAll(".js-mock-open-q").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.idx);
+      state.filteredQuestions = [...state.mock.questions];
+      state.currentIndex = idx;
+      document.getElementById("examMatchCount").textContent = `模試の全${state.filteredQuestions.length}問を復習中`;
+      switchExamSubMode("practice");
+      renderCurrentQuestion();
+      revealCurrentAnswerOnly();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  document.getElementById("mockRunPanel").style.display = "none";
+  document.getElementById("mockResultPanel").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // =========================================================================

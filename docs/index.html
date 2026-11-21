@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=20261121b" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -72,6 +72,12 @@
     <main class="main-area">
       <!-- 1. 過去問演習 -->
       <section id="view-exam" class="view-section active">
+        <div class="mode-switch-bar">
+          <button type="button" class="mode-switch-btn active" id="tabPracticeMode">📝 練習モード（1問ずつ採点）</button>
+          <button type="button" class="mode-switch-btn" id="tabMockMode">⏱ 実践試験モード（タイム計測・一括採点）</button>
+        </div>
+
+        <div id="practiceContainer">
         <div class="hero-banner">
           <h2>公式過去問 10年分・3,450問でガッチリ合格力をつける</h2>
           <p>厚生労働省の公式過去問（第102〜111回）を完全収録！選択肢シャッフル＆スマホ拡大表示でスキマ時間も快適に学習できます。</p>
@@ -187,6 +193,183 @@
             <button class="btn btn-secondary" id="btnPrevQ">← 前の問題</button>
             <span id="qPagerInfo" style="font-size:13px; font-weight:700; color:var(--text-sub);">0 / 0</span>
             <button class="btn btn-primary" id="btnNextQ">次の問題 →</button>
+          </div>
+        </div>
+        </div><!-- /#practiceContainer -->
+
+        <!-- 実践試験モード（本番模試） -->
+        <div id="mockContainer" style="display:none;">
+          <!-- 開始前セットアップ画面 -->
+          <div id="mockSetupPanel" class="card">
+            <h2 class="page-title" style="font-size:20px;">⏱ 実践試験モード（本番タイム計測・全問一括採点）</h2>
+            <p class="page-subtitle" style="margin-bottom:12px;">
+              開始ボタンから全問解答し終えるまでの所要時間・1問あたりペースを計測し、最後にまとめて一括採点します。
+            </p>
+
+            <h3 style="margin:10px 0 6px; font-size:14px; color:var(--text-sub);">ワンタップ模試プリセット（本番と同じ時間配分）</h3>
+            <div class="mock-preset-grid">
+              <button type="button" class="mock-preset-card" id="presetHissu10">
+                <h4>🔥 必須ミニ模試（10問 / 10分）</h4>
+                <p>1問1分ペース！10年分の必須問題からランダム出題</p>
+              </button>
+              <button type="button" class="mock-preset-card" id="presetLaw15">
+                <h4>⚖️ 法規・制度 集中模試（15問 / 20分）</h4>
+                <p>試験に出る法規問題を10年分からランダム15問</p>
+              </button>
+              <button type="button" class="mock-preset-card" id="presetHissu90">
+                <h4>🏫 本番フル必須模試（90問 / 90分）</h4>
+                <p>最新・第111回の必須問題（問1〜90）を本番そのまま</p>
+              </button>
+              <button type="button" class="mock-preset-card" id="presetRiron20">
+                <h4>🧪 理論スピード模試（20問 / 35分）</h4>
+                <p>薬学理論問題からランダム20問に挑戦</p>
+              </button>
+            </div>
+
+            <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:14px;">
+              <h3 style="margin:0 0 10px; font-size:14px; color:var(--text-sub);">カスタム試験を作成</h3>
+              <div class="filter-grid">
+                <div class="field">
+                  <label for="mExam">試験回</label>
+                  <select id="mExam">
+                    <option value="all" selected>10年分すべて（ランダム）</option>
+                    <option value="111">第111回（2026年）</option>
+                    <option value="110">第110回（2025年）</option>
+                    <option value="109">第109回（2024年）</option>
+                    <option value="108">第108回（2023年）</option>
+                    <option value="107">第107回（2022年）</option>
+                    <option value="106">第106回（2021年）</option>
+                    <option value="105">第105回（2020年）</option>
+                    <option value="104">第104回（2019年）</option>
+                    <option value="103">第103回（2018年）</option>
+                    <option value="102">第102回（2017年）</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="mSection">区分</label>
+                  <select id="mSection">
+                    <option value="all">すべて</option>
+                    <option value="必須" selected>必須問題（1問1分目安）</option>
+                    <option value="理論">薬学理論（1問2分目安）</option>
+                    <option value="実践">薬学実践（1問2分目安）</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="mSubject">科目</label>
+                  <select id="mSubject">
+                    <option value="all">全9科目</option>
+                    <option value="法規・制度・倫理">法規・制度・倫理</option>
+                    <option value="物理">物理</option>
+                    <option value="化学">化学</option>
+                    <option value="生物">生物</option>
+                    <option value="衛生">衛生</option>
+                    <option value="薬理">薬理</option>
+                    <option value="薬剤">薬剤</option>
+                    <option value="病態・薬物治療">病態・薬物治療</option>
+                    <option value="実務">実務</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="mCount">問題数</label>
+                  <select id="mCount">
+                    <option value="5">5問（お試し）</option>
+                    <option value="10" selected>10問</option>
+                    <option value="20">20問</option>
+                    <option value="30">30問</option>
+                    <option value="50">50問</option>
+                    <option value="90">90問（必須フル）</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="mTimeLimit">制限時間</label>
+                  <select id="mTimeLimit">
+                    <option value="auto" selected>本番ペース自動計算</option>
+                    <option value="10">10分</option>
+                    <option value="20">20分</option>
+                    <option value="30">30分</option>
+                    <option value="60">60分</option>
+                    <option value="90">90分</option>
+                    <option value="0">制限なし（経過時間のみ計測）</option>
+                  </select>
+                </div>
+              </div>
+              <button type="button" class="btn btn-primary" id="btnStartCustomMock" style="width:100%; padding:13px; font-size:15px;">
+                ▶ 試験を開始する（タイマースタート）
+              </button>
+            </div>
+          </div>
+
+          <!-- 試験実行中パネル -->
+          <div id="mockRunPanel" style="display:none;">
+            <div class="mock-hud">
+              <div>
+                <div class="mock-hud-sub" id="mockTitleLabel">実践試験中</div>
+                <div class="mock-hud-time" id="mockClockLabel">経過 00:00 ／ 残り 10:00</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <span class="mobile-stat-pill" id="mockAnsweredPill">解答済 0 / 10</span>
+                <button type="button" class="btn btn-accent btn-sm" id="btnFinishMock">📝 終了して採点</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnAbortMock">中断</button>
+              </div>
+            </div>
+
+            <div class="card" id="mockQuestionCard">
+              <div class="q-header">
+                <div class="q-badges" id="mqBadges"></div>
+                <div class="q-tools">
+                  <button type="button" class="bookmark-btn" id="btnMockFlag">🚩 見直しチェック</button>
+                </div>
+              </div>
+
+              <div class="q-display-controls">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnMockFont">🔤 文字サイズ：標準</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnMockPdfToggle" style="display:none;">📄 元の試験用紙を見る</button>
+              </div>
+
+              <div id="mqStemBox" class="q-stem-box" style="display:none;"></div>
+              <div id="mqImages" class="q-images"></div>
+
+              <div id="mqSelectHint" style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-bottom:6px;"></div>
+              <div id="mqChoices"></div>
+
+              <div class="q-nav-bar">
+                <button type="button" class="btn btn-secondary" id="btnMockPrev">← 前の問題</button>
+                <span id="mqPagerInfo" style="font-size:13px; font-weight:700; color:var(--text-sub);">1 / 10</span>
+                <button type="button" class="btn btn-primary" id="btnMockNext">次の問題 →</button>
+              </div>
+
+              <div style="font-size:11px; color:var(--text-sub); margin-top:10px;">
+                問題番号ジャンプ（緑＝解答済 ／ 黄＝見直しチェック ／ 白＝未解答）
+              </div>
+              <div id="mockPalette" class="mock-palette"></div>
+            </div>
+          </div>
+
+          <!-- 採点結果レポートパネル -->
+          <div id="mockResultPanel" style="display:none;">
+            <div class="card">
+              <div id="mockResultHero" class="mock-result-hero pass"></div>
+
+              <div class="kpi-grid" id="mockResultKpis"></div>
+
+              <h3 style="margin:14px 0 8px; font-size:15px;">科目別の正答率</h3>
+              <div id="mockResultSubjects"></div>
+
+              <div style="display:flex; gap:10px; flex-wrap:wrap; margin:16px 0;">
+                <button type="button" class="btn btn-primary" id="btnMockReviewWrong">🔁 間違えた問題だけ練習モードで復習</button>
+                <button type="button" class="btn btn-secondary" id="btnMockBackToSetup">⏱ 別の試験に挑戦する</button>
+              </div>
+
+              <h3 style="margin:14px 0 8px; font-size:15px;">全問題の採点結果一覧（タップで解説・復習）</h3>
+              <div class="cmp-table-wrap">
+                <table class="log-table" id="mockResultTable">
+                  <thead>
+                    <tr><th>#</th><th>試験回・問</th><th>科目</th><th>判定</th><th>公式正答</th><th>操作</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -373,6 +556,6 @@
     </div>
   </div>
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=20261121b"></script>
 </body>
 </html>
