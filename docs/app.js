@@ -15,6 +15,7 @@ const PARENT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwz34ohkIf15
 const AUTH_HASH = "6abed39429b147f70634cb1fc554069f2e53d6bbf03487daac82bead1a050af2";
 const AUTH_SESSION_KEY = "pharma_exam_auth_ok_v1";
 const PARENT_MUTE_KEY = "pharma_exam_parent_mute_v1";
+const MOCK_DRAFT_KEY = "pharma_exam_mock_draft_v1";
 
 const STORAGE_KEY = "pharma_exam_studio_v1";
 
@@ -47,6 +48,8 @@ const state = {
 
   // 実践試験モード（本番模試）
   examMode: "practice", // "practice" | "mock"
+  currentView: "exam",
+  hasMockResult: false,
   mock: {
     active: false,
     title: "",
@@ -308,6 +311,7 @@ async function init() {
   renderOxView();
   renderCompareView();
   renderDashboard();
+  refreshMockDraftBanner();
 
   // アプリ起動を静かに記録（URLに?report=papaがない通常利用時のみ）
   const params = new URLSearchParams(window.location.search);
@@ -357,6 +361,7 @@ function bindNavigation() {
 }
 
 function switchView(viewName) {
+  state.currentView = viewName;
   document.querySelectorAll(".view-section").forEach((s) => s.classList.remove("active"));
   const el = document.getElementById(`view-${viewName}`);
   if (el) el.classList.add("active");
@@ -368,6 +373,7 @@ function switchView(viewName) {
   if (viewName === "dashboard") {
     renderDashboard();
   }
+  updateMockReturnBanners();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1588,19 +1594,24 @@ function bindMockControls() {
   });
 
   document.getElementById("btnAbortMock").addEventListener("click", () => {
-    if (!confirm("進行中の試験を中断して最初の画面に戻りますか？")) return;
+    if (!confirm("進行中の試験を中断して最初の画面に戻りますか？（途中経過は破棄されます）")) return;
     clearInterval(state.mock.timerHandle);
     state.mock.active = false;
+    clearMockDraft();
     document.getElementById("mockRunPanel").style.display = "none";
     document.getElementById("mockResultPanel").style.display = "none";
     document.getElementById("mockSetupPanel").style.display = "block";
     renderMockHistory();
+    updateMockReturnBanners();
+    refreshMockDraftBanner();
   });
 
   document.getElementById("btnMockBackToSetup").addEventListener("click", () => {
+    state.hasMockResult = false;
     document.getElementById("mockResultPanel").style.display = "none";
     document.getElementById("mockSetupPanel").style.display = "block";
     renderMockHistory();
+    updateMockReturnBanners();
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
@@ -1615,6 +1626,235 @@ function bindMockControls() {
     switchExamSubMode("practice");
     renderCurrentQuestion();
   });
+
+  // 戻りバー・途中再開バナーのボタン
+  document.getElementById("btnReturnToActiveMock").addEventListener("click", () => {
+    switchView("exam");
+    switchExamSubMode("mock");
+  });
+
+  document.getElementById("btnBackToMockResult").addEventListener("click", () => {
+    switchView("exam");
+    switchExamSubMode("mock");
+    document.getElementById("mockSetupPanel").style.display = "none";
+    document.getElementById("mockRunPanel").style.display = "none";
+    document.getElementById("mockResultPanel").style.display = "block";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  document.getElementById("btnResumeMockDraft").addEventListener("click", () => resumeMockFromDraft());
+  document.getElementById("btnDiscardMockDraft").addEventListener("click", () => {
+    if (!confirm("保存されている途中の試験データを破棄してもよろしいですか？")) return;
+    clearMockDraft();
+    refreshMockDraftBanner();
+  });
+
+  // ページ離脱・バックグラウンド移行時の自動保存＆誤操作防止警告（iPhone/iPad/Android/PC対応）
+  window.addEventListener("beforeunload", (e) => {
+    if (state.mock.active) {
+      recordCurrentMockQuestionTime();
+      saveMockDraft();
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    if (state.mock.active) {
+      recordCurrentMockQuestionTime();
+      saveMockDraft();
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && state.mock.active) {
+      recordCurrentMockQuestionTime();
+      saveMockDraft();
+    }
+  });
+}
+
+function saveMockDraft() {
+  if (!state.mock.active || !state.mock.questions.length) return;
+  try {
+    const answersPlain = {};
+    Object.entries(state.mock.answers).forEach(([k, set]) => {
+      if (set && set.size > 0) answersPlain[k] = [...set];
+    });
+    const orderMap = {};
+    Object.entries(state.mock.shuffledMap).forEach(([k, arr]) => {
+      if (Array.isArray(arr)) orderMap[k] = arr.map((c) => c.orig);
+    });
+    const examsUsed = [...new Set(state.mock.questions.map((q) => q.exam))];
+    const draft = {
+      v: 1,
+      savedAt: Date.now(),
+      title: state.mock.title,
+      isHissuFull: state.mock.isHissuFull,
+      examsUsed,
+      qIds: state.mock.questions.map((q) => q.id),
+      orderMap,
+      answers: answersPlain,
+      flags: state.mock.flags,
+      qSpentSec: state.mock.qSpentSec,
+      index: state.mock.index,
+      limitSec: state.mock.limitSec,
+      elapsedSec: Math.max(0, Math.floor((Date.now() - state.mock.startMs) / 1000)),
+    };
+    localStorage.setItem(MOCK_DRAFT_KEY, JSON.stringify(draft));
+  } catch (_) {}
+}
+
+function loadMockDraft() {
+  try {
+    const raw = localStorage.getItem(MOCK_DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || !Array.isArray(d.qIds) || d.qIds.length === 0) return null;
+    return d;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearMockDraft() {
+  try {
+    localStorage.removeItem(MOCK_DRAFT_KEY);
+  } catch (_) {}
+}
+
+function refreshMockDraftBanner() {
+  const bar = document.getElementById("mockDraftResumeBar");
+  if (!bar) return;
+  if (state.mock.active) {
+    bar.classList.remove("open");
+    return;
+  }
+  const draft = loadMockDraft();
+  if (!draft) {
+    bar.classList.remove("open");
+    return;
+  }
+  const ansCount = Object.keys(draft.answers || {}).length;
+  document.getElementById("mockDraftResumeText").textContent = `⏱ 途中の実践試験があります：${draft.title}`;
+  document.getElementById("mockDraftResumeSub").textContent =
+    `解答済 ${ansCount} / ${draft.qIds.length} 問・経過 ${formatMinSec(draft.elapsedSec || 0)}（前回の続きからそのまま再開できます）`;
+  bar.classList.add("open");
+}
+
+function updateMockReturnBanners() {
+  const activeBar = document.getElementById("mockActiveReturnBar");
+  if (activeBar) {
+    const awayFromRunningMock = state.mock.active && !(state.currentView === "exam" && state.examMode === "mock");
+    activeBar.classList.toggle("open", awayFromRunningMock);
+    if (awayFromRunningMock) {
+      const remTxt =
+        state.mock.limitSec > 0
+          ? `残り ${formatMinSec(Math.max(0, state.mock.limitSec - state.mock.elapsedSec))}`
+          : `経過 ${formatMinSec(state.mock.elapsedSec)}`;
+      document.getElementById("mockActiveReturnText").textContent =
+        `⏱ 実践試験が進行中：${state.mock.title}（解答済 ${countMockAnswered()}/${state.mock.questions.length}・${remTxt}）`;
+    }
+  }
+  const resBar = document.getElementById("mockResultReturnBar");
+  if (resBar) {
+    const showRes = !state.mock.active && state.hasMockResult && state.examMode === "practice";
+    resBar.classList.toggle("open", showRes);
+  }
+}
+
+async function resumeMockFromDraft() {
+  const draft = loadMockDraft();
+  if (!draft) {
+    refreshMockDraftBanner();
+    return;
+  }
+  const exams = Array.isArray(draft.examsUsed) && draft.examsUsed.length ? draft.examsUsed : ALL_EXAM_NUMS;
+  await Promise.all(exams.map((n) => loadExamData(Number(n))));
+
+  const qMap = {};
+  exams.forEach((n) => {
+    (state.examCache[Number(n)] || []).forEach((q) => {
+      qMap[q.id] = q;
+    });
+  });
+
+  const restoredQuestions = draft.qIds.map((id) => qMap[id]).filter(Boolean);
+  if (!restoredQuestions.length) {
+    alert("問題の復元に失敗したため途中データを破棄しました。");
+    clearMockDraft();
+    refreshMockDraftBanner();
+    return;
+  }
+
+  // シャッフル順を完全復元
+  const shuffledMap = {};
+  restoredQuestions.forEach((q, idx) => {
+    if (q.can_shuffle && q.choices && q.choices.length > 0) {
+      const savedOrder = draft.orderMap && draft.orderMap[idx];
+      if (Array.isArray(savedOrder) && savedOrder.length === q.choices.length) {
+        const byOrig = {};
+        q.choices.forEach((c) => (byOrig[c.orig] = c));
+        const ordered = savedOrder.map((o) => byOrig[o]).filter(Boolean);
+        shuffledMap[idx] = ordered.length === q.choices.length ? ordered : q.choices.map((c) => ({ ...c }));
+      } else {
+        shuffledMap[idx] = q.choices.map((c) => ({ ...c }));
+      }
+    }
+  });
+
+  const restoredAnswers = {};
+  Object.entries(draft.answers || {}).forEach(([k, arr]) => {
+    if (Array.isArray(arr) && arr.length > 0) restoredAnswers[Number(k)] = new Set(arr);
+  });
+
+  clearInterval(state.mock.timerHandle);
+  state.hasMockResult = false;
+  state.mock.active = true;
+  state.mock.title = draft.title;
+  state.mock.isHissuFull = Boolean(draft.isHissuFull);
+  state.mock.questions = restoredQuestions;
+  state.mock.shuffledMap = shuffledMap;
+  state.mock.answers = restoredAnswers;
+  state.mock.flags = draft.flags || {};
+  state.mock.qSpentSec = draft.qSpentSec || {};
+  state.mock.index = Math.min(draft.index || 0, restoredQuestions.length - 1);
+  state.mock.limitSec = draft.limitSec || 0;
+  state.mock.elapsedSec = draft.elapsedSec || 0;
+  // 中断時点の経過時間からシームレスに再開（離れていた間の時間は消費しない！）
+  state.mock.startMs = Date.now() - state.mock.elapsedSec * 1000;
+  state.mock.qEnterMs = Date.now();
+
+  switchView("exam");
+  switchExamSubMode("mock");
+  document.getElementById("mockTitleLabel").textContent = state.mock.title;
+  document.getElementById("mockSetupPanel").style.display = "none";
+  document.getElementById("mockHistoryCard").style.display = "none";
+  document.getElementById("mockResultPanel").style.display = "none";
+  document.getElementById("mockRunPanel").style.display = "block";
+  document.getElementById("mockQuestionCard").classList.toggle("font-large", state.largeFont);
+
+  refreshMockDraftBanner();
+  updateMockReturnBanners();
+  startMockTimerLoop();
+  renderMockQuestion();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function startMockTimerLoop() {
+  clearInterval(state.mock.timerHandle);
+  updateMockClock();
+  let tick = 0;
+  state.mock.timerHandle = setInterval(() => {
+    state.mock.elapsedSec = Math.floor((Date.now() - state.mock.startMs) / 1000);
+    updateMockClock();
+    updateMockReturnBanners();
+    tick += 1;
+    if (tick % 5 === 0) saveMockDraft();
+    if (state.mock.limitSec > 0 && state.mock.elapsedSec >= state.mock.limitSec) {
+      clearInterval(state.mock.timerHandle);
+      alert("⏰ 制限時間になりました！自動で一括採点を行います。");
+      finishMockExam(true);
+    }
+  }, 1000);
 }
 
 function recordCurrentMockQuestionTime() {
@@ -1631,6 +1871,8 @@ function switchExamSubMode(mode) {
   document.getElementById("tabMockMode").classList.toggle("active", mode === "mock");
   document.getElementById("practiceContainer").style.display = mode === "practice" ? "block" : "none";
   document.getElementById("mockContainer").style.display = mode === "mock" ? "block" : "none";
+  updateMockReturnBanners();
+  refreshMockDraftBanner();
 }
 
 function renderMockHistory() {
@@ -1770,6 +2012,7 @@ async function startMockByConfig({
   });
 
   clearInterval(state.mock.timerHandle);
+  state.hasMockResult = false;
   state.mock.active = true;
   state.mock.title = `${title}（全${selected.length}問）`;
   state.mock.isHissuFull = isHissuFull;
@@ -1791,16 +2034,10 @@ async function startMockByConfig({
   document.getElementById("mockRunPanel").style.display = "block";
   document.getElementById("mockQuestionCard").classList.toggle("font-large", state.largeFont);
 
-  updateMockClock();
-  state.mock.timerHandle = setInterval(() => {
-    state.mock.elapsedSec = Math.floor((Date.now() - state.mock.startMs) / 1000);
-    updateMockClock();
-    if (state.mock.limitSec > 0 && state.mock.elapsedSec >= state.mock.limitSec) {
-      clearInterval(state.mock.timerHandle);
-      alert("⏰ 制限時間になりました！自動で一括採点を行います。");
-      finishMockExam(true);
-    }
-  }, 1000);
+  saveMockDraft();
+  refreshMockDraftBanner();
+  updateMockReturnBanners();
+  startMockTimerLoop();
 
   recordActivity("mock_start", `${selected.length}問${skipped ? "(即開始)" : ""}`, state.mock.title, null);
   renderMockQuestion();
@@ -1962,6 +2199,7 @@ function renderMockQuestion() {
 
   renderMockPalette();
   updateMockClock();
+  saveMockDraft();
 }
 
 function toggleMockChoice(idx, choiceNum, maxSelect) {
@@ -1986,6 +2224,7 @@ function toggleMockChoice(idx, choiceNum, maxSelect) {
   });
   renderMockPalette();
   updateMockClock();
+  saveMockDraft();
 }
 
 function renderMockPalette() {
@@ -2013,6 +2252,10 @@ function finishMockExam(timeUp) {
   recordCurrentMockQuestionTime();
   clearInterval(state.mock.timerHandle);
   state.mock.active = false;
+  state.hasMockResult = true;
+  clearMockDraft();
+  refreshMockDraftBanner();
+  updateMockReturnBanners();
   const elapsedSec = Math.max(1, Math.floor((Date.now() - state.mock.startMs) / 1000));
   let validTotal = 0;
   let correctCount = 0;

@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122a" />
+  <link rel="stylesheet" href="./styles.css?v=20261122d" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -70,6 +70,26 @@
 
     <!-- Main Content -->
     <main class="main-area">
+      <!-- 試験進行中に別メニューへ移動した時の戻りバー -->
+      <div id="mockActiveReturnBar" class="mock-return-banner">
+        <div>
+          <strong id="mockActiveReturnText">⏱ 実践試験が進行中です</strong>
+        </div>
+        <button type="button" class="btn btn-accent btn-sm" id="btnReturnToActiveMock">← 試験画面に戻る</button>
+      </div>
+
+      <!-- 途中保存された実践試験の再開バナー（ページ遷移・再読み込み後に表示） -->
+      <div id="mockDraftResumeBar" class="mock-return-banner">
+        <div>
+          <strong id="mockDraftResumeText">⏱ 途中の実践試験データが保存されています</strong>
+          <div style="font-size:12px;" id="mockDraftResumeSub">前回の続き（解答・残り時間）から再開できます。</div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary btn-sm" id="btnResumeMockDraft">▶ 続きから再開</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnDiscardMockDraft">破棄</button>
+        </div>
+      </div>
+
       <!-- 1. 過去問演習 -->
       <section id="view-exam" class="view-section active">
         <div class="mode-switch-bar">
@@ -78,6 +98,12 @@
         </div>
 
         <div id="practiceContainer">
+        <!-- 模試の採点結果から「復習・解説」へ飛んだ時の戻りバー -->
+        <div id="mockResultReturnBar" class="mock-return-banner" style="background:#ecfdf5; border-color:#10b981; color:#065f46;">
+          <strong>📋 実践試験（模試）の復習を表示中です</strong>
+          <button type="button" class="btn btn-primary btn-sm" id="btnBackToMockResult">← 模試の採点結果一覧に戻る</button>
+        </div>
+
         <div class="hero-banner">
           <h2>公式過去問 10年分・3,450問でガッチリ合格力をつける</h2>
           <p>厚生労働省の公式過去問（第102〜111回）を完全収録！選択肢シャッフル＆スマホ拡大表示でスキマ時間も快適に学習できます。</p>
@@ -623,6 +649,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122c"></script>
+  <script src="./app.js?v=20261122d"></script>
 </body>
 </html>
