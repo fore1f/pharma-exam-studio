@@ -46,7 +46,7 @@ const state = {
 
   // 法令・○×・比較表
   studyPack: null,
-  activeLawIdx: -1, // -1 = 全法令横断
+  activeLawIdx: 1, // デフォルトで薬機法を選択（-1 = 全法令横断）
   redSheetOn: true,
   oxCategory: "すべて",
   oxList: [],
