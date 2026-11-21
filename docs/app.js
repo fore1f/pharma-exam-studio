@@ -9,7 +9,7 @@
 // 裏側で静かにお父さんのGoogleスプレッドシートへ自動送信されます。
 // （空欄のままでもアプリ自体は100%正常に動作します）
 // =========================================================================
-const PARENT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyAAd9oUrOkBMOyOfxZpf8WPcamFMrS_Q2lOIZDj5-QaV6UJpdpTTWbHRE_0FKAEL4Kag/exec";
+const PARENT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwz34ohkIf15dmLQmkrkjE5DAq87QQJLs9Xuy4lHTGANkVhbHTN-3RRuEpDZZ_SbQ_H3A/exec";
 
 // 起動パスワードのSHA-256ハッシュ（初期パスワード: yakugaku2026）
 const AUTH_HASH = "6abed39429b147f70634cb1fc554069f2e53d6bbf03487daac82bead1a050af2";
@@ -1121,6 +1121,36 @@ function renderParentTablesFromLocal() {
   renderParentTables(daily, state.progress.recent || []);
 }
 
+function formatCloudDate(val) {
+  const s = String(val || "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  return s;
+}
+
+function formatCloudTime(val) {
+  const s = String(val || "");
+  if (/^\d{2}:\d{2}/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  return s;
+}
+
+function formatCloudDateTime(val) {
+  const s = String(val || "");
+  if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${formatCloudDate(d)} ${formatCloudTime(d)}`;
+  }
+  return s;
+}
+
 function renderParentTables(daily, recent) {
   const dBody = document.querySelector("#parentDailyTable tbody");
   dBody.innerHTML = daily.length
@@ -1128,12 +1158,12 @@ function renderParentTables(daily, recent) {
         .map((d) => {
           const pct = d.answers > 0 ? Math.round((d.correct / d.answers) * 100) + "%" : "-";
           return `<tr>
-            <td><strong>${escapeHtml(d.date)}</strong></td>
+            <td><strong>${escapeHtml(formatCloudDate(d.date))}</strong></td>
             <td>${d.answers}問</td>
             <td>${d.correct}問</td>
             <td>${pct}</td>
             <td>約${d.minutes}分</td>
-            <td>${escapeHtml(d.lastActive)}</td>
+            <td>${escapeHtml(formatCloudTime(d.lastActive))}</td>
           </tr>`;
         })
         .join("")
@@ -1145,7 +1175,7 @@ function renderParentTables(daily, recent) {
         .slice(0, 30)
         .map(
           (r) => `<tr>
-            <td>${escapeHtml(r.ts)}</td>
+            <td>${escapeHtml(formatCloudDateTime(r.ts))}</td>
             <td>${escapeHtml(r.event)}</td>
             <td>${escapeHtml(r.subject)}</td>
             <td>${escapeHtml(r.qid)}</td>
