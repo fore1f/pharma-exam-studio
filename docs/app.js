@@ -9,7 +9,7 @@
 // 裏側で静かにお父さんのGoogleスプレッドシートへ自動送信されます。
 // （空欄のままでもアプリ自体は100%正常に動作します）
 // =========================================================================
-const PARENT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxxItsz8YoAG1bbTXjxRi3e6BMiZj70564p4jQkFWp-s3Xl-p40vDUwTxvCHqUYOhwS8A/exec";
+const PARENT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwBlhtH0KjJvQdi0pX54m_zjsKcoQjPqjqrFPaB5KDTDvU-QhdPOXYbf1I74SmZMPLEIw/exec";
 
 // 起動パスワードのSHA-256ハッシュ（初期パスワード: yakugaku2026）
 const AUTH_HASH = "6abed39429b147f70634cb1fc554069f2e53d6bbf03487daac82bead1a050af2";
