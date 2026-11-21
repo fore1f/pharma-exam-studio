@@ -1253,10 +1253,14 @@ html, body {
   .bottom-nav { display: flex; }
   .main-area {
     margin-left: 0;
-    padding: 14px 12px 84px;
+    padding: 12px 8px 84px;
   }
   .card {
-    padding: 15px;
+    padding: 13px 10px;
+  }
+  .q-img-wrap {
+    padding: 3px;
+    border-radius: 8px;
   }
   .bar-row {
     grid-template-columns: 95px 1fr 58px;
