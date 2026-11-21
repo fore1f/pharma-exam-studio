@@ -1,0 +1,10 @@
+{
+  "name": "薬剤師国家試験 過去問＆法令マスター",
+  "short_name": "薬学国試マスター",
+  "description": "第109〜111回公式過去問1,035問＋最新法令赤シート暗記＋○×＋比較表",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#0f766e",
+  "icons": []
+}

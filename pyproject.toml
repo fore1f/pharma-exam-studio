@@ -1,0 +1,13 @@
+[project]
+name = "pharma-exam-studio"
+version = "0.1.0"
+description = "薬剤師国家試験 過去問＆法令マスター データ構築ツール"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "httpx>=0.27.0",
+    "pymupdf>=1.24.0",
+]
+
+[tool.uv.workspace]
+members = []

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>薬剤師国家試験 過去問＆法令マスター</title>
+</head>
+<body>
+  <!-- Startup Password Gate -->
+  <div id="authGate" style="position:fixed; inset:0; z-index:200; background:linear-gradient(135deg,#0f4c48 0%,#0f766e 100%); display:flex; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#fff; border-radius:20px; max-width:380px; width:100%; padding:28px 24px; box-shadow:0 20px 48px rgba(0,0,0,0.28); text-align:center;">
+      <div style="font-size:38px; margin-bottom:8px;">🔐</div>
+      <h2 style="margin:0 0 6px; font-size:20px; color:#0f172a;">薬剤師国家試験マスター</h2>
+      <p style="margin:0 0 18px; font-size:13px; color:#475569;">合言葉（パスワード）を入力して学習を始めましょう</p>
+      <form id="authForm">
+        <input id="authInput" type="password" autocomplete="current-password" placeholder="パスワードを入力" style="width:100%; padding:12px 14px; border:2px solid #cbd5e1; border-radius:12px; font-size:16px; margin-bottom:12px; text-align:center;" required />
+        <label style="display:flex; align-items:center; justify-content:center; gap:6px; font-size:12px; color:#475569; margin-bottom:14px; cursor:pointer;">
+          <input type="checkbox" id="authRemember" checked /> この端末では次回から自動ログイン
+        </label>
+        <button type="submit" class="btn btn-primary" style="width:100%; padding:12px; font-size:15px;">学習をスタート</button>
+        <div id="authError" style="color:#dc2626; font-size:12px; font-weight:700; margin-top:10px; min-height:18px;"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Mobile Header -->
+  <header class="mobile-header">
+    <h1 id="mobileBrandTitle">薬学国試マスター</h1>
+    <div class="mobile-stat-pill" id="mobileTodayPill">今日 0問</div>
+  </header>
+
+  <div class="app-shell">
+    <!-- PC Sidebar -->
+    <aside class="sidebar">
+      <div class="brand" id="pcBrandTitle">
+        <span class="brand-badge">公式過去問 1,725問 + 最新法令</span>
+        <h1>薬剤師国家試験<br />過去問＆法令マスター</h1>
+        <p>第107〜111回・全9科目対応</p>
+      </div>
+
+      <button class="nav-btn active" data-view="exam">
+        <span class="nav-icon">📝</span> 過去問演習（1,725問）
+      </button>
+      <button class="nav-btn" data-view="law">
+        <span class="nav-icon">⚖️</span> 法律・赤シート暗記
+      </button>
+      <button class="nav-btn" data-view="ox">
+        <span class="nav-icon">⚡</span> 一問一答・○×演習
+      </button>
+      <button class="nav-btn" data-view="compare">
+        <span class="nav-icon">📊</span> 紛らわしい比較表
+      </button>
+      <button class="nav-btn" data-view="dashboard">
+        <span class="nav-icon">🏆</span> 成績・弱点克服
+      </button>
+
+      <div class="sidebar-footer">
+        <div style="font-weight:700; margin-bottom:4px;">今日の学習</div>
+        <div class="stat-line"><span>解答数</span><strong id="sideTodayCount">0問</strong></div>
+        <div class="stat-line"><span>累計正答率</span><strong id="sideAccuracy">-</strong></div>
+        <div class="stat-line"><span>要復習マーク</span><strong id="sideBookmarks">0問</strong></div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-area">
+      <!-- 1. 過去問演習 -->
+      <section id="view-exam" class="view-section active">
+        <div class="hero-banner">
+          <h2>公式過去問 1,725問（5年分）でガッチリ合格力をつける</h2>
+          <p>厚生労働省の公式過去問（第107〜111回）を本物そのままの図表・化学構造式で収録。間違えた問題も1タップで解説チェック！</p>
+          <div class="quick-chips">
+            <button class="quick-chip" id="qsHissu10">🔥 必須ランダム10問</button>
+            <button class="quick-chip" id="qsLawAll">⚖️ 法規・制度だけ集中</button>
+            <button class="quick-chip" id="qsWrongOnly">🔁 間違えた問題だけ復習</button>
+            <button class="quick-chip" id="qsLatest111">✨ 第111回（最新）から</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="filter-grid">
+            <div class="field">
+              <label for="fExam">試験回</label>
+              <select id="fExam">
+                <option value="all">すべて（第107〜111回・1,725問）</option>
+                <option value="111" selected>第111回（2026年）</option>
+                <option value="110">第110回（2025年）</option>
+                <option value="109">第109回（2024年）</option>
+                <option value="108">第108回（2023年）</option>
+                <option value="107">第107回（2022年）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="fSection">区分</label>
+              <select id="fSection">
+                <option value="all">すべて（必須・理論・実践）</option>
+                <option value="必須">必須問題（問1〜90）</option>
+                <option value="理論">薬学理論（問91〜195）</option>
+                <option value="実践">薬学実践（問196〜345）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="fSubject">科目</label>
+              <select id="fSubject">
+                <option value="all">全9科目</option>
+                <option value="法規・制度・倫理">法規・制度・倫理</option>
+                <option value="物理">物理</option>
+                <option value="化学">化学</option>
+                <option value="生物">生物</option>
+                <option value="衛生">衛生</option>
+                <option value="薬理">薬理</option>
+                <option value="薬剤">薬剤</option>
+                <option value="病態・薬物治療">病態・薬物治療</option>
+                <option value="実務">実務</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="fStatus">学習状態</label>
+              <select id="fStatus">
+                <option value="all">すべて</option>
+                <option value="unanswered">未回答のみ</option>
+                <option value="wrong">間違えた問題のみ</option>
+                <option value="bookmarked">要復習マークのみ</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="fSearch">キーワード検索</label>
+              <input type="search" id="fSearch" placeholder="例：麻薬、処方箋、ワルファリン" />
+            </div>
+          </div>
+          <div class="filter-actions">
+            <span class="result-count" id="examMatchCount">読み込み中...</span>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" id="btnShuffle">🔀 シャッフル</button>
+              <button class="btn btn-secondary btn-sm" id="btnResetFilter">リセット</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="questionCard">
+          <div class="q-header">
+            <div class="q-badges" id="qBadges"></div>
+            <div class="q-tools">
+              <span class="timer-pill" id="qTimer">⏱ 00:00</span>
+              <button class="bookmark-btn" id="btnBookmark">☆ 要復習</button>
+            </div>
+          </div>
+
+          <div id="qImages" class="q-images"></div>
+
+          <div id="qSelectHint" style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-bottom:6px;"></div>
+          <div id="qChoices" class="choices-bar"></div>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-primary" id="btnSubmitAnswer">解答を確定する</button>
+            <button class="btn btn-secondary" id="btnShowAnswer">答えを見る</button>
+          </div>
+
+          <div id="qJudgeBox" style="display:none;"></div>
+
+          <div class="memo-area">
+            <label for="qMemo" style="font-size:12px; font-weight:700; color:var(--text-sub); display:block; margin-bottom:4px;">
+              📝 自分用メモ（自動保存）
+            </label>
+            <textarea id="qMemo" placeholder="間違えた理由や暗記のコツをメモしておけます..."></textarea>
+          </div>
+
+          <div class="q-nav-bar">
+            <button class="btn btn-secondary" id="btnPrevQ">← 前の問題</button>
+            <span id="qPagerInfo" style="font-size:13px; font-weight:700; color:var(--text-sub);">0 / 0</span>
+            <button class="btn btn-primary" id="btnNextQ">次の問題 →</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 法律・赤シート暗記 -->
+      <section id="view-law" class="view-section">
+        <h2 class="page-title">⚖️ 法律・赤シート暗記（最新条文）</h2>
+        <p class="page-subtitle">国の公式データベース（e-Gov）から取得した最新の重要条文。数字・期限・許可権者を赤シートで隠して反復暗記できます。</p>
+
+        <div class="law-tabs" id="lawTabs"></div>
+
+        <div class="redsheet-bar">
+          <div>
+            <strong style="color:#be123c;">📕 赤シート暗記モード</strong>
+            <span style="font-size:12px; color:#881337; display:block;">ONにすると重要語句が赤く隠れます。赤い部分をタップすると1つずつ確認できます。</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-danger btn-sm" id="btnToggleRedSheet">赤シート：ON</button>
+            <button class="btn btn-secondary btn-sm" id="btnResetCloze">全部隠し直す</button>
+          </div>
+        </div>
+
+        <div class="card" style="padding:12px 16px;">
+          <input type="search" id="lawSearch" placeholder="条文を検索（例：処方箋、保存、30日、麻薬、廃棄）" style="width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; font-size:14px;" />
+        </div>
+
+        <div id="lawArticlesList" class="redsheet-on"></div>
+      </section>
+
+      <!-- 3. 一問一答・○×演習 -->
+      <section id="view-ox" class="view-section">
+        <h2 class="page-title">⚡ 法規・制度 一問一答 ○×スピード演習</h2>
+        <p class="page-subtitle">「許可 vs 届出」「厚労大臣 vs 都道府県知事」「14歳 vs 18歳」など、毎年狙われるひっかけ問題を徹底攻略！</p>
+
+        <div class="law-tabs" id="oxCategoryTabs"></div>
+
+        <div class="card ox-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <span class="badge badge-subj" id="oxCatBadge">薬剤師法</span>
+            <span style="font-size:13px; font-weight:700; color:var(--text-sub);" id="oxProgress">1 / 36</span>
+          </div>
+
+          <div class="ox-statement" id="oxStatement">読み込み中...</div>
+
+          <div class="ox-actions">
+            <button class="ox-btn o-btn" id="btnOxTrue">⭕ 正しい（○）</button>
+            <button class="ox-btn x-btn" id="btnOxFalse">❌ 誤り（×）</button>
+          </div>
+
+          <div id="oxResultBox" style="display:none;"></div>
+
+          <div class="q-nav-bar">
+            <button class="btn btn-secondary" id="btnOxPrev">← 前へ</button>
+            <button class="btn btn-secondary btn-sm" id="btnOxShuffle">🔀 ランダム出題</button>
+            <button class="btn btn-primary" id="btnOxNext">次へ →</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 紛らわしい比較表 -->
+      <section id="view-compare" class="view-section">
+        <h2 class="page-title">📊 まぎらわしい知識・横並び比較表</h2>
+        <p class="page-subtitle">試験で混同しやすい数字・手続き・ルールを一目で整理。「隠してテスト」をONにすると表の中を赤シート暗記できます。</p>
+
+        <div class="redsheet-bar">
+          <div>
+            <strong style="color:#be123c;">🧠 表の中身を隠してテスト</strong>
+            <span style="font-size:12px; color:#881337; display:block;">ONにすると表のセルが隠れます。タップして答え合わせ！</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnToggleCmpMask">隠してテスト：OFF</button>
+        </div>
+
+        <div id="compareContainer"></div>
+      </section>
+
+      <!-- 5. 成績・弱点克服 -->
+      <section id="view-dashboard" class="view-section">
+        <h2 class="page-title">🏆 成績・弱点克服ダッシュボード</h2>
+        <p class="page-subtitle">これまでの学習記録と科目ごとの得意・不得意を自動集計します。</p>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">今日の解答数</div>
+            <div class="kpi-val" id="kpiToday">0問</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">累計解答数</div>
+            <div class="kpi-val" id="kpiTotal">0問</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">全体の正答率</div>
+            <div class="kpi-val" id="kpiAcc">-</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">間違えた問題（要復習）</div>
+            <div class="kpi-val" id="kpiWrong" style="color:var(--danger);">0問</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+            <h3 style="margin:0; font-size:16px;">科目別の正答率</h3>
+            <button class="btn btn-primary btn-sm" id="btnDashReviewWrong">🔁 間違えた問題を今すぐ復習</button>
+          </div>
+          <div id="subjectBars"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 10px; font-size:16px;">直近7日間の学習量</h3>
+          <div id="weeklyBars"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 8px; font-size:16px;">データのバックアップ・引き継ぎ</h3>
+          <p style="font-size:13px; color:var(--text-sub); margin:0 0 12px;">
+            学習記録はこの端末のブラウザに自動保存されています。別端末へ移す場合は以下から書き出し・読み込みができます。
+          </p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" id="btnExportBackup">📤 バックアップをコピー</button>
+            <button class="btn btn-secondary btn-sm" id="btnImportBackup">📥 バックアップを復元</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="active" data-view="exam"><span class="b-icon">📝</span>過去問</button>
+    <button data-view="law"><span class="b-icon">⚖️</span>法令暗記</button>
+    <button data-view="ox"><span class="b-icon">⚡</span>○×演習</button>
+    <button data-view="compare"><span class="b-icon">📊</span>比較表</button>
+    <button data-view="dashboard"><span class="b-icon">🏆</span>成績</button>
+  </nav>
+
+  <!-- Image Zoom Modal -->
+  <div class="modal-backdrop" id="zoomModal">
+    <div class="modal-card" style="max-width:960px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <strong>問題の拡大表示</strong>
+        <button class="btn btn-secondary btn-sm" id="btnCloseZoom">閉じる</button>
+      </div>
+      <img id="zoomImgTarget" class="zoom-img" src="" alt="拡大問題" />
+    </div>
+  </div>
+
+  <!-- Hidden Parent Report Modal (通常画面にはボタンなし。?report=papa またはタイトル7連打で開く) -->
+  <div class="modal-backdrop" id="parentModal">
+    <div class="modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0; font-size:18px; color:var(--primary-dark);">🔒 保護者専用・学習見守りレポート</h3>
+        <button class="btn btn-secondary btn-sm" id="btnCloseParent">閉じる</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-sub); margin-top:0;">
+        ※この画面は通常メニューには表示されません（URL末尾に <code>?report=papa</code> を付けると直接開けます）。
+      </p>
+
+      <div id="parentCloudStatus" class="judge-box info" style="margin-bottom:14px;"></div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+        <button class="btn btn-primary btn-sm" id="btnFetchCloudReport">🔄 クラウドから最新レポート取得</button>
+        <button class="btn btn-secondary btn-sm" id="btnSendTestPing">📡 テスト記録を送信</button>
+      </div>
+
+      <h4 style="margin:12px 0 6px; font-size:14px;">日別の学習サマリー</h4>
+      <div class="cmp-table-wrap">
+        <table class="log-table" id="parentDailyTable">
+          <thead>
+            <tr><th>日付</th><th>解答数</th><th>正解数</th><th>正答率</th><th>推定勉強時間</th><th>最終アクセス</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h4 style="margin:16px 0 6px; font-size:14px;">直近の学習アクション（最新30件）</h4>
+      <div class="cmp-table-wrap">
+        <table class="log-table" id="parentRecentTable">
+          <thead>
+            <tr><th>日時</th><th>内容</th><th>科目</th><th>問題</th><th>正誤</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
