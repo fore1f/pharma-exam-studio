@@ -1,11 +1,6 @@
 /**
- * 【お父さん専用・裏見守り機能 ＋ 別デバイス途中試験クラウド同期】
+ * 【お父さん専用・裏見守り機能 ＋ 全デバイス成績・途中試験クラウド自動同期】
  * Google Apps Script（ウェブアプリ）
- *
- * 更新手順（30秒・URLは変わりません！）:
- * 1. Apps Script画面のコードをすべて消して、下のコードを貼り付けて保存（Ctrl+S）
- * 2. 右上「デプロイ」→「デプロイを管理」→ 鉛筆アイコン（編集）
- * 3. 「バージョン」を「新バージョン」に変更して「デプロイ」を押すだけで完了！
  */
 
 function doPost(e) {
@@ -13,23 +8,31 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var data = JSON.parse(e.postData.contents);
 
-    // 1. 別デバイス継続用：実践試験の途中経過クラウド保存
+    // 1. 全デバイス成績・ブックマーク・メモ・模試履歴のクラウド同期
+    if (data.event === "progress_sync") {
+      saveChunkedSheet_(ss, "学習データ同期", data.progressJson || "", data.deviceId || "");
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, mode: "progress_saved" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 2. 別デバイス継続用：実践試験の途中経過クラウド保存
     if (data.event === "mock_draft_save") {
-      saveMockDraftSheet_(ss, data.draftJson || "", data.deviceId || "");
+      saveChunkedSheet_(ss, "途中保存", data.draftJson || "", data.deviceId || "");
       return ContentService
         .createTextOutput(JSON.stringify({ ok: true, mode: "draft_saved" }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. 別デバイス継続用：途中経過のクリア（採点完了・中断・破棄時）
+    // 3. 別デバイス継続用：途中経過のクリア
     if (data.event === "mock_draft_clear") {
-      clearMockDraftSheet_(ss);
+      clearChunkedSheet_(ss, "途中保存");
       return ContentService
         .createTextOutput(JSON.stringify({ ok: true, mode: "draft_cleared" }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 3. 通常の学習ログ記録（お父さん見守り用）
+    // 4. 通常の学習ログ記録（お父さん見守り用）
     var logSheet = ss.getSheetByName("ログ");
     if (!logSheet) {
       logSheet = ss.insertSheet("ログ");
@@ -45,8 +48,8 @@ function doPost(e) {
     var dateStr = Utilities.formatDate(now, "Asia/Tokyo", "yyyy-MM-dd");
 
     logSheet.appendRow([
-      ts,
-      dateStr,
+      "'" + ts,
+      "'" + dateStr,
       data.event || "answer",
       data.qid || "",
       data.subject || "",
@@ -75,11 +78,14 @@ function doGet(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var mode = (e && e.parameter && e.parameter.mode) ? String(e.parameter.mode) : "";
 
-    // お子さんの別デバイス起動時：途中保存データだけを軽量取得（見守りログは返さない）
-    if (mode === "draft") {
-      var draftObj = readMockDraftSheet_(ss);
+    // お子さんの端末起動時：成績＋途中試験だけを1回で軽量取得（見守りログは返さない）
+    if (mode === "sync" || mode === "draft") {
       return ContentService
-        .createTextOutput(JSON.stringify({ ok: true, mockDraft: draftObj }))
+        .createTextOutput(JSON.stringify({
+          ok: true,
+          mockDraft: readChunkedSheet_(ss, "途中保存"),
+          progress: readChunkedSheet_(ss, "学習データ同期")
+        }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -131,7 +137,7 @@ function doGet(e) {
         ok: true,
         daily: daily,
         recentLogs: recentLogs,
-        mockDraft: readMockDraftSheet_(ss)
+        mockDraft: readChunkedSheet_(ss, "途中保存")
       }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
@@ -141,33 +147,44 @@ function doGet(e) {
   }
 }
 
-function saveMockDraftSheet_(ss, draftJson, deviceId) {
-  var sheet = ss.getSheetByName("途中保存");
+// 1セル上限(50,000文字)を超えないよう45,000文字ごとに自動分割保存
+function saveChunkedSheet_(ss, sheetName, jsonStr, deviceId) {
+  var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    sheet = ss.insertSheet("途中保存");
-    sheet.appendRow(["更新日時", "端末", "途中データJSON"]);
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(["更新日時", "端末", "データ1", "データ2", "データ3", "データ4", "データ5", "データ6"]);
     sheet.setFrozenRows(1);
   }
   var ts = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy-MM-dd HH:mm:ss");
-  sheet.getRange(2, 1, 1, 3).setValues([[ts, deviceId, draftJson]]);
-}
-
-function clearMockDraftSheet_(ss) {
-  var sheet = ss.getSheetByName("途中保存");
-  if (!sheet) return;
-  if (sheet.getLastRow() >= 2) {
-    sheet.getRange(2, 1, 1, 3).clearContent();
+  var maxChunks = 6;
+  var chunkSize = 45000;
+  var row = ["'" + ts, deviceId];
+  for (var i = 0; i < maxChunks; i++) {
+    var start = i * chunkSize;
+    row.push(start < jsonStr.length ? jsonStr.slice(start, start + chunkSize) : "");
   }
+  sheet.getRange(2, 1, 1, row.length).setValues([row]);
 }
 
-function readMockDraftSheet_(ss) {
-  var sheet = ss.getSheetByName("途中保存");
+function clearChunkedSheet_(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  sheet.getRange(2, 1, 1, Math.max(8, sheet.getLastColumn())).clearContent();
+}
+
+function readChunkedSheet_(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return null;
-  var row = sheet.getRange(2, 1, 1, 3).getValues()[0];
-  var raw = String(row[2] || "").trim();
-  if (!raw) return null;
+  var cols = Math.max(8, sheet.getLastColumn());
+  var row = sheet.getRange(2, 1, 1, cols).getValues()[0];
+  var combined = "";
+  for (var i = 2; i < row.length; i++) {
+    combined += String(row[i] || "");
+  }
+  combined = combined.trim();
+  if (!combined) return null;
   try {
-    var parsed = JSON.parse(raw);
+    var parsed = JSON.parse(combined);
     parsed._cloudUpdatedAt = String(row[0] || "");
     parsed._cloudDevice = String(row[1] || "");
     return parsed;
@@ -183,7 +200,6 @@ function updateDailySummary_(ss, dateStr, data) {
     sheet.appendRow(["日付", "解答数", "正解数", "勉強時間(分)", "最終アクセス"]);
     sheet.setFrozenRows(1);
   }
-
   var nowStr = Utilities.formatDate(new Date(), "Asia/Tokyo", "HH:mm:ss");
   var lastRow = sheet.getLastRow();
   var foundRow = -1;
@@ -194,27 +210,19 @@ function updateDailySummary_(ss, dateStr, data) {
       var cellDateStr = (cellVal instanceof Date)
         ? Utilities.formatDate(cellVal, "Asia/Tokyo", "yyyy-MM-dd")
         : String(cellVal).trim();
-      if (cellDateStr === dateStr) {
-        foundRow = i + 2;
-        break;
-      }
+      if (cellDateStr === dateStr) { foundRow = i + 2; break; }
     }
   }
-
   var isAnswer = (data.event === "answer" || data.event === "ox_answer");
   var addAns = isAnswer ? 1 : 0;
   var addCor = (isAnswer && data.correct === true) ? 1 : 0;
   var mins = Number(data.todayMinutes) || 0;
-
   if (foundRow === -1) {
     sheet.appendRow(["'" + dateStr, addAns, addCor, mins, "'" + nowStr]);
   } else {
-    var curAns = Number(sheet.getRange(foundRow, 2).getValue()) || 0;
-    var curCor = Number(sheet.getRange(foundRow, 3).getValue()) || 0;
-    var curMin = Number(sheet.getRange(foundRow, 4).getValue()) || 0;
-    sheet.getRange(foundRow, 2).setValue(curAns + addAns);
-    sheet.getRange(foundRow, 3).setValue(curCor + addCor);
-    sheet.getRange(foundRow, 4).setValue(Math.max(curMin, mins));
+    sheet.getRange(foundRow, 2).setValue((Number(sheet.getRange(foundRow, 2).getValue()) || 0) + addAns);
+    sheet.getRange(foundRow, 3).setValue((Number(sheet.getRange(foundRow, 3).getValue()) || 0) + addCor);
+    sheet.getRange(foundRow, 4).setValue(Math.max(Number(sheet.getRange(foundRow, 4).getValue()) || 0, mins));
     sheet.getRange(foundRow, 5).setValue("'" + nowStr);
   }
 }

@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122e" />
+  <link rel="stylesheet" href="./styles.css?v=20261122g" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -557,9 +557,12 @@
         </div>
 
         <div class="card">
-          <h3 style="margin:0 0 8px; font-size:16px;">データのバックアップ・引き継ぎ</h3>
-          <p style="font-size:13px; color:var(--text-sub); margin:0 0 12px;">
-            学習記録はこの端末のブラウザに自動保存されています。別端末へ移す場合は以下から書き出し・読み込みができます。
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:8px;">
+            <h3 style="margin:0; font-size:16px;">☁ クラウド自動同期（スマホ・iPad・PC共通）</h3>
+            <button class="btn btn-primary btn-sm" id="btnSyncProgressNow">🔄 今すぐ最新状態に同期</button>
+          </div>
+          <p id="cloudSyncStatusText" style="font-size:13px; color:var(--text-sub); margin:0 0 12px;">
+            学習記録・ブックマーク・メモ・模試履歴は全デバイスで自動同期されます。
           </p>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn btn-secondary btn-sm" id="btnExportBackup">📤 バックアップをコピー</button>
@@ -650,6 +653,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122f"></script>
+  <script src="./app.js?v=20261122g"></script>
 </body>
 </html>

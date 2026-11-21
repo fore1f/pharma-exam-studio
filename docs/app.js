@@ -52,6 +52,8 @@ const state = {
   hasMockResult: false,
   cloudDraft: null,
   cloudDraftSaveTimer: null,
+  cloudProgressSyncTimer: null,
+  cloudSyncInitialized: false,
   mock: {
     active: false,
     title: "",
@@ -126,11 +128,142 @@ function loadProgress() {
   };
 }
 
-function saveProgress() {
+function saveProgress(skipCloudPush = false) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
   } catch (_) {}
   updateSidebarStats();
+  if (!skipCloudPush) {
+    scheduleProgressCloudSync();
+  }
+}
+
+function buildSyncableProgressPayload() {
+  return {
+    v: 1,
+    updatedAt: Date.now(),
+    answers: state.progress.answers || {},
+    bookmarks: state.progress.bookmarks || {},
+    memos: state.progress.memos || {},
+    daily: state.progress.daily || {},
+    mockHistory: (state.progress.mockHistory || []).slice(0, 30),
+  };
+}
+
+function pushProgressToCloudNow() {
+  if (!PARENT_WEBHOOK_URL || isParentMuted() || !state.cloudSyncInitialized) return;
+  try {
+    const payloadObj = buildSyncableProgressPayload();
+    const hasAnyData =
+      Object.keys(payloadObj.answers).length > 0 ||
+      Object.keys(payloadObj.bookmarks).length > 0 ||
+      Object.keys(payloadObj.memos).length > 0 ||
+      Object.keys(payloadObj.daily).length > 0 ||
+      payloadObj.mockHistory.length > 0;
+    if (!hasAnyData) return;
+
+    const body = JSON.stringify({
+      event: "progress_sync",
+      progressJson: JSON.stringify(payloadObj),
+      deviceId: getDeviceLabel(),
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(PARENT_WEBHOOK_URL, new Blob([body], { type: "text/plain;charset=utf-8" }));
+    } else {
+      fetch(PARENT_WEBHOOK_URL, {
+        method: "POST",
+        mode: "no-cors",
+        keepalive: true,
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body,
+      }).catch(() => {});
+    }
+  } catch (_) {}
+}
+
+function scheduleProgressCloudSync() {
+  if (!PARENT_WEBHOOK_URL || isParentMuted() || !state.cloudSyncInitialized) return;
+  clearTimeout(state.cloudProgressSyncTimer);
+  state.cloudProgressSyncTimer = setTimeout(() => {
+    pushProgressToCloudNow();
+  }, 1600);
+}
+
+function mergeProgressData(local, cloud) {
+  if (!cloud || typeof cloud !== "object") return { merged: local, localHadNewer: false };
+  let localHadNewer = false;
+
+  // 1. answers: 問題IDごとにタイムスタンプが新しい方を採用（両端末の解答が1問も消えない！）
+  const mergedAnswers = { ...(cloud.answers || {}) };
+  Object.entries(local.answers || {}).forEach(([qid, lVal]) => {
+    const cVal = mergedAnswers[qid];
+    if (!cVal || (lVal.ts || 0) > (cVal.ts || 0)) {
+      mergedAnswers[qid] = lVal;
+      if (!cVal || (lVal.ts || 0) > (cVal.ts || 0)) localHadNewer = true;
+    }
+  });
+
+  // 2. bookmarks: 合体（クラウドとローカルの要復習マークを維持）
+  const mergedBookmarks = { ...(cloud.bookmarks || {}), ...(local.bookmarks || {}) };
+  if (Object.keys(local.bookmarks || {}).some((k) => !(cloud.bookmarks || {})[k])) {
+    localHadNewer = true;
+  }
+
+  // 3. memos: 両方を統合
+  const mergedMemos = { ...(cloud.memos || {}) };
+  Object.entries(local.memos || {}).forEach(([qid, txt]) => {
+    if (txt && (!mergedMemos[qid] || txt.length > mergedMemos[qid].length)) {
+      mergedMemos[qid] = txt;
+      localHadNewer = true;
+    }
+  });
+
+  // 4. daily: 日付ごとに大きい方の解答数・正解数・学習時間＆新しい最終アクセス時刻を採用
+  const mergedDaily = {};
+  const allDates = new Set([...Object.keys(cloud.daily || {}), ...Object.keys(local.daily || {})]);
+  allDates.forEach((dKey) => {
+    const cD = (cloud.daily || {})[dKey];
+    const lD = (local.daily || {})[dKey];
+    if (cD && lD) {
+      mergedDaily[dKey] = {
+        count: Math.max(cD.count || 0, lD.count || 0),
+        correct: Math.max(cD.correct || 0, lD.correct || 0),
+        minutes: Math.max(cD.minutes || 0, lD.minutes || 0),
+        lastActive: String(lD.lastActive || "") > String(cD.lastActive || "") ? lD.lastActive : cD.lastActive,
+      };
+      if ((lD.count || 0) > (cD.count || 0) || (lD.minutes || 0) > (cD.minutes || 0)) {
+        localHadNewer = true;
+      }
+    } else if (cD) {
+      mergedDaily[dKey] = cD;
+    } else if (lD) {
+      mergedDaily[dKey] = lD;
+      localHadNewer = true;
+    }
+  });
+
+  // 5. mockHistory: 重複除去して新しい順に最大30件
+  const histMap = new Map();
+  [...(cloud.mockHistory || []), ...(local.mockHistory || [])].forEach((h) => {
+    const key = `${h.ts}|${h.title}|${h.correct}|${h.total}`;
+    if (!histMap.has(key)) histMap.set(key, h);
+  });
+  const mergedMockHistory = [...histMap.values()].slice(0, 30);
+  if ((local.mockHistory || []).length > (cloud.mockHistory || []).length) {
+    localHadNewer = true;
+  }
+
+  return {
+    merged: {
+      ...local,
+      answers: mergedAnswers,
+      bookmarks: mergedBookmarks,
+      memos: mergedMemos,
+      daily: mergedDaily,
+      mockHistory: mergedMockHistory,
+    },
+    localHadNewer,
+  };
 }
 
 function getTodayMinutes() {
@@ -1149,6 +1282,11 @@ function bindDashboardControls() {
       alert("復元に失敗しました。正しいバックアップ文字列か確認してください。");
     }
   });
+
+  const syncNowBtn = document.getElementById("btnSyncProgressNow");
+  if (syncNowBtn) {
+    syncNowBtn.addEventListener("click", () => checkCloudMockDraft(true));
+  }
 }
 
 function renderDashboard() {
@@ -1261,7 +1399,7 @@ function bindSecretParentTrigger() {
         recent: [],
         mockHistory: [],
       };
-      saveProgress();
+      saveProgress(true);
       renderDashboard();
       renderMockHistory();
       applyExamFilter();
@@ -1679,11 +1817,15 @@ function bindMockControls() {
       recordCurrentMockQuestionTime();
       saveMockDraft(true);
     }
+    pushProgressToCloudNow();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden" && state.mock.active) {
-      recordCurrentMockQuestionTime();
-      saveMockDraft(true);
+    if (document.visibilityState === "hidden") {
+      if (state.mock.active) {
+        recordCurrentMockQuestionTime();
+        saveMockDraft(true);
+      }
+      pushProgressToCloudNow();
     }
   });
 }
@@ -1783,17 +1925,71 @@ function getBestAvailableMockDraft() {
   return null;
 }
 
-async function checkCloudMockDraft() {
-  if (!PARENT_WEBHOOK_URL || state.mock.active) return;
+async function checkCloudMockDraft(manual = false) {
+  const statusEl = document.getElementById("cloudSyncStatusText");
+  if (!PARENT_WEBHOOK_URL) {
+    state.cloudSyncInitialized = true;
+    return;
+  }
+  if (isParentMuted()) {
+    state.cloudSyncInitialized = true;
+    if (statusEl && manual) {
+      statusEl.textContent = "🔇 この端末は保護者用ミュート中のためクラウド同期をスキップしました。";
+    }
+    return;
+  }
+  if (manual && statusEl) {
+    statusEl.textContent = "🔄 クラウドと最新データを同期中です...";
+  }
   try {
     const sep = PARENT_WEBHOOK_URL.includes("?") ? "&" : "?";
-    const resp = await fetch(`${PARENT_WEBHOOK_URL}${sep}mode=draft`);
+    const resp = await fetch(`${PARENT_WEBHOOK_URL}${sep}mode=sync`);
     const data = await resp.json();
-    if (data && data.ok && data.mockDraft && Array.isArray(data.mockDraft.qIds) && data.mockDraft.qIds.length > 0) {
-      state.cloudDraft = data.mockDraft;
+    if (data && data.ok) {
+      // 1. 途中試験データの反映
+      if (data.mockDraft && Array.isArray(data.mockDraft.qIds) && data.mockDraft.qIds.length > 0) {
+        state.cloudDraft = data.mockDraft;
+      } else {
+        state.cloudDraft = null;
+      }
       refreshMockDraftBanner();
+
+      // 2. 全学習成績・今日の学習・ブックマーク・メモ・模試履歴の安全マージ
+      let shouldPushBack = false;
+      if (data.progress && typeof data.progress === "object") {
+        const { merged, localHadNewer } = mergeProgressData(state.progress, data.progress);
+        state.progress = merged;
+        saveProgress(true);
+        shouldPushBack = localHadNewer;
+      } else {
+        // クラウドがまだ空でローカルに学習記録がある場合はアップロード
+        shouldPushBack = Object.keys(state.progress.answers || {}).length > 0;
+      }
+
+      state.cloudSyncInitialized = true;
+      if (shouldPushBack || manual) {
+        pushProgressToCloudNow();
+      }
+
+      renderDashboard();
+      renderMockHistory();
+      updateSidebarStats();
+      if (state.filteredQuestions.length > 0 && !state.answeredCurrent && state.examMode === "practice") {
+        renderCurrentQuestion();
+      }
+
+      if (statusEl) {
+        statusEl.textContent = `✅ クラウド同期完了（${nowTimeStr().slice(0, 5)} 更新・スマホ/iPad/PC共通）`;
+      }
+    } else {
+      state.cloudSyncInitialized = true;
     }
-  } catch (_) {}
+  } catch (_) {
+    state.cloudSyncInitialized = true;
+    if (manual && statusEl) {
+      statusEl.textContent = "⚠️ 通信に失敗しました。電波の良い場所で再度お試しください。";
+    }
+  }
 }
 
 function clearMockDraft(syncCloud = true) {
