@@ -82,6 +82,7 @@ const state = {
   lawAudioRate: 1.0,
   lawAudioActive: false,
   lawShownList: [],
+  lawReturnTarget: null, // { label, artIdx }
   oxCategory: "すべて",
   oxList: [],
   oxIndex: 0,
@@ -1072,6 +1073,27 @@ function bindLawControls() {
   if (stopBtn) {
     stopBtn.addEventListener("click", () => stopLawAudio());
   }
+
+  const backLawBtn = document.getElementById("btnBackToLawArticle");
+  if (backLawBtn) {
+    backLawBtn.addEventListener("click", () => {
+      const target = state.lawReturnTarget;
+      state.lawReturnTarget = null;
+      const bar = document.getElementById("lawReturnBar");
+      if (bar) bar.classList.remove("open");
+      switchView("law");
+      if (target && typeof target.artIdx === "number") {
+        setTimeout(() => {
+          const el = document.querySelector(`.article-card[data-law-idx="${target.artIdx}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add("speaking");
+            setTimeout(() => el.classList.remove("speaking"), 1600);
+          }
+        }, 120);
+      }
+    });
+  }
 }
 
 // 音声読み上げ専用の薬学・法令ふりがな辞書（画面表示は変えず、耳の読み上げだけを正確に補正）
@@ -1262,7 +1284,7 @@ function startLawPlayAll() {
   speakLawIndex(0, true);
 }
 
-async function openRelatedPastQuestions(qids, label) {
+async function openRelatedPastQuestions(qids, label, artIdx) {
   if (!qids || qids.length === 0) return;
   stopLawAudio();
   await loadAllExams();
@@ -1275,6 +1297,11 @@ async function openRelatedPastQuestions(qids, label) {
   }
   state.filteredQuestions = matched;
   state.currentIndex = 0;
+  state.lawReturnTarget = { label, artIdx };
+  const bar = document.getElementById("lawReturnBar");
+  const txt = document.getElementById("lawReturnText");
+  if (txt) txt.textContent = `⚖️ 「${label}」の関連過去問（${matched.length}問）を学習中`;
+  if (bar) bar.classList.add("open");
   document.getElementById("examMatchCount").textContent = `⚖️ ${label} の関連過去問（${matched.length}問）`;
   switchView("exam");
   switchExamSubMode("practice");
@@ -1387,7 +1414,7 @@ function renderLawArticles() {
     const pastQBtn = div.querySelector(".js-law-past-q");
     if (pastQBtn) {
       pastQBtn.addEventListener("click", () => {
-        openRelatedPastQuestions(art.related_qids || [], `${lawShort} ${art.title}`);
+        openRelatedPastQuestions(art.related_qids || [], `${lawShort} ${art.title}`, idx);
       });
     }
     container.appendChild(div);
