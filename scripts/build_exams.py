@@ -44,6 +44,26 @@ EXAM_PAGES: dict[int, dict[str, str]] = {
         "year": "令和4年（2022年）",
         "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000198924.html",
     },
+    106: {
+        "year": "令和3年（2021年）",
+        "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000198923.html",
+    },
+    105: {
+        "year": "令和2年（2020年）",
+        "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000198922.html",
+    },
+    104: {
+        "year": "平成31年（2019年）",
+        "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000198921.html",
+    },
+    103: {
+        "year": "平成30年（2018年）",
+        "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000198920.html",
+    },
+    102: {
+        "year": "平成29年（2017年）",
+        "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000168886.html",
+    },
 }
 
 RAW_DIR = Path("raw_pdfs")

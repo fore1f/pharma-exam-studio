@@ -40,11 +40,14 @@ const state = {
   timerSec: 0,
   timerHandle: null,
   sessionStartMs: Date.now(),
+  shuffleChoices: true,
+  largeFont: false,
+  pdfImgVisible: false,
 
   // 法令・○×・比較表
   studyPack: null,
-  activeLawIdx: 0,
-  redSheetOn: true,
+  activeLawIdx: -1, // -1 = 全法令横断
+  redSheetOn: false,
   oxCategory: "すべて",
   oxList: [],
   oxIndex: 0,
@@ -266,14 +269,10 @@ async function loadExamData(examNum) {
   return state.examCache[examNum];
 }
 
+const ALL_EXAM_NUMS = [111, 110, 109, 108, 107, 106, 105, 104, 103, 102];
+
 async function loadAllExams() {
-  await Promise.all([
-    loadExamData(111),
-    loadExamData(110),
-    loadExamData(109),
-    loadExamData(108),
-    loadExamData(107),
-  ]);
+  await Promise.all(ALL_EXAM_NUMS.map((n) => loadExamData(n)));
 }
 
 async function loadStudyPack() {
@@ -334,6 +333,26 @@ function bindExamControls() {
     shuffleArray(state.filteredQuestions);
     state.currentIndex = 0;
     renderCurrentQuestion();
+  });
+
+  document.getElementById("btnToggleChoiceShuffle").addEventListener("click", () => {
+    state.shuffleChoices = !state.shuffleChoices;
+    const btn = document.getElementById("btnToggleChoiceShuffle");
+    btn.textContent = state.shuffleChoices ? "🔀 選択肢シャッフル：ON" : "🔀 選択肢シャッフル：OFF";
+    btn.className = state.shuffleChoices ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+    renderCurrentQuestion();
+  });
+
+  document.getElementById("btnToggleFontSize").addEventListener("click", () => {
+    state.largeFont = !state.largeFont;
+    document.getElementById("questionCard").classList.toggle("font-large", state.largeFont);
+    document.getElementById("btnToggleFontSize").textContent = state.largeFont ? "🔤 文字サイズ：大" : "🔤 文字サイズ：標準";
+  });
+
+  document.getElementById("btnTogglePdfImg").addEventListener("click", () => {
+    state.pdfImgVisible = !state.pdfImgVisible;
+    document.getElementById("qImages").style.display = state.pdfImgVisible ? "flex" : "none";
+    document.getElementById("btnTogglePdfImg").textContent = state.pdfImgVisible ? "📄 試験用紙を隠す" : "📄 元の試験用紙を見る";
   });
 
   document.getElementById("btnResetFilter").addEventListener("click", () => {
@@ -449,13 +468,7 @@ async function applyExamFilter() {
   let pool = [];
   if (fExam === "all") {
     await loadAllExams();
-    pool = [
-      ...(state.examCache[111] || []),
-      ...(state.examCache[110] || []),
-      ...(state.examCache[109] || []),
-      ...(state.examCache[108] || []),
-      ...(state.examCache[107] || []),
-    ];
+    pool = ALL_EXAM_NUMS.flatMap((n) => state.examCache[n] || []);
   } else {
     pool = await loadExamData(Number(fExam));
   }
@@ -528,8 +541,12 @@ function renderCurrentQuestion() {
 
   updateBookmarkButton(q.id);
 
-  // 画像レンダリング
+  // 画像・テキスト表示モード切替
+  const useTextMode = Boolean(q.can_shuffle && q.stem && q.choices && q.choices.length > 0);
+  const stemBox = document.getElementById("qStemBox");
   const imgBox = document.getElementById("qImages");
+  const pdfToggleBtn = document.getElementById("btnTogglePdfImg");
+
   imgBox.innerHTML = "";
   (q.images || []).forEach((src, idx) => {
     const wrap = document.createElement("div");
@@ -537,7 +554,7 @@ function renderCurrentQuestion() {
     if (q.has_lead && src.includes("lead_")) {
       const tag = document.createElement("div");
       tag.className = "lead-tag";
-      tag.textContent = "📌 共通の症例・処方箋・リード文";
+      tag.textContent = "📌 共通の症例・処方箋・リード文（タップで拡大）";
       wrap.appendChild(tag);
     }
     const img = document.createElement("img");
@@ -552,26 +569,69 @@ function renderCurrentQuestion() {
     imgBox.appendChild(wrap);
   });
 
+  if (useTextMode) {
+    stemBox.style.display = "block";
+    stemBox.textContent = q.stem;
+    state.pdfImgVisible = Boolean(q.show_img_alongside);
+    imgBox.style.display = state.pdfImgVisible ? "flex" : "none";
+    pdfToggleBtn.style.display = "inline-flex";
+    pdfToggleBtn.textContent = state.pdfImgVisible ? "📄 試験用紙を隠す" : "📄 元の試験用紙を見る";
+  } else {
+    stemBox.style.display = "none";
+    state.pdfImgVisible = true;
+    imgBox.style.display = "flex";
+    pdfToggleBtn.style.display = "none";
+  }
+
   // 選択肢ボタン
   const hint = document.getElementById("qSelectHint");
   if (q.multi_mode === "none") {
     hint.textContent = "※この問題は公式発表により「採点除外・解なし」となっています。";
-  } else if (q.select_count > 1) {
-    hint.textContent = `選択肢から ${q.select_count}つ 選んで「解答を確定する」を押してください`;
+  } else if (useTextMode) {
+    const shufNote = state.shuffleChoices ? "（順番シャッフル中）" : "";
+    hint.textContent =
+      q.select_count > 1
+        ? `選択肢から ${q.select_count}つ 選んで「解答を確定する」を押してください ${shufNote}`
+        : `選択肢から 1つ 選んで「解答を確定する」を押してください ${shufNote}`;
   } else {
-    hint.textContent = "選択肢から 1つ 選んで「解答を確定する」を押してください";
+    hint.textContent =
+      (q.select_count > 1
+        ? `選択肢から ${q.select_count}つ 選んでください`
+        : "選択肢から 1つ 選んでください") +
+      " ※図表・構造式問題のため試験用紙のまま表示（画像タップで拡大できます）";
   }
 
   const choicesEl = document.getElementById("qChoices");
   choicesEl.innerHTML = "";
-  const numChoices = Math.max(5, q.max_choice || 5);
-  for (let c = 1; c <= numChoices; c++) {
-    const btn = document.createElement("button");
-    btn.className = "choice-btn";
-    btn.textContent = String(c);
-    btn.dataset.choice = String(c);
-    btn.addEventListener("click", () => toggleChoice(c, q.select_count));
-    choicesEl.appendChild(btn);
+  if (useTextMode) {
+    choicesEl.className = "choices-cards";
+    const list = q.choices.map((c) => ({ ...c }));
+    if (state.shuffleChoices) {
+      shuffleArray(list);
+    }
+    const letters = ["A", "B", "C", "D", "E", "F"];
+    list.forEach((item, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "choice-card-btn";
+      btn.dataset.choice = String(item.orig);
+      const label = state.shuffleChoices ? letters[idx] || String(idx + 1) : String(item.orig);
+      btn.innerHTML = `<span class="choice-label-badge">${label}</span><span>${escapeHtml(item.text)}</span>`;
+      btn.addEventListener("click", () => toggleChoice(item.orig, q.select_count));
+      choicesEl.appendChild(btn);
+    });
+  } else {
+    choicesEl.className = "choices-bar";
+    const numChoices = Math.max(5, q.max_choice || 5);
+    for (let c = 1; c <= numChoices; c++) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "choice-btn";
+      btn.textContent = String(c);
+      btn.dataset.choice = String(c);
+      btn.addEventListener("click", () => toggleChoice(c, q.select_count));
+      choicesEl.appendChild(btn);
+    }
   }
 
   document.getElementById("qJudgeBox").style.display = "none";
@@ -595,7 +655,7 @@ function toggleChoice(choiceNum, maxSelect) {
       state.selectedChoices.add(choiceNum);
     }
   }
-  document.querySelectorAll("#qChoices .choice-btn").forEach((btn) => {
+  document.querySelectorAll("#qChoices button[data-choice]").forEach((btn) => {
     const c = Number(btn.dataset.choice);
     btn.classList.toggle("selected", state.selectedChoices.has(c));
   });
@@ -631,7 +691,7 @@ function submitCurrentAnswer() {
   }
 
   // ボタン色付け
-  document.querySelectorAll("#qChoices .choice-btn").forEach((btn) => {
+  document.querySelectorAll("#qChoices button[data-choice]").forEach((btn) => {
     const c = Number(btn.dataset.choice);
     btn.classList.remove("selected");
     if (official.includes(c)) btn.classList.add("correct");
@@ -643,8 +703,8 @@ function submitCurrentAnswer() {
   box.className = `judge-box ${isCorrect ? "ok" : "ng"}`;
   box.innerHTML =
     (isCorrect
-      ? `🎉 <strong>正解！</strong>（公式正答：${official.join("・")}）${q.note ? `<br><small>${q.note}</small>` : ""}`
-      : `❌ <strong>不正解</strong>　あなたの解答：${chosen.join("・")} ／ <strong>公式正答：${official.join("・")}</strong>${q.note ? `<br><small>${q.note}</small>` : ""}`) +
+      ? `🎉 <strong>正解！</strong>（公式正答番号：${official.join("・")}）${q.note ? `<br><small>${q.note}</small>` : ""}`
+      : `❌ <strong>不正解</strong>　<strong>公式正答番号：${official.join("・")}</strong>（緑色の選択肢が正解です）${q.note ? `<br><small>${q.note}</small>` : ""}`) +
     buildExplainHelperHtml(q, official);
   bindExplainHelperButtons(box, q, official);
 
@@ -662,7 +722,7 @@ function revealCurrentAnswerOnly() {
   const q = state.filteredQuestions[state.currentIndex];
   if (!q) return;
   const official = [...(q.answers || [])].sort((a, b) => a - b);
-  document.querySelectorAll("#qChoices .choice-btn").forEach((btn) => {
+  document.querySelectorAll("#qChoices button[data-choice]").forEach((btn) => {
     const c = Number(btn.dataset.choice);
     if (official.includes(c)) btn.classList.add("correct");
   });
@@ -745,7 +805,7 @@ function bindLawControls() {
     state.redSheetOn = !state.redSheetOn;
     const btn = document.getElementById("btnToggleRedSheet");
     const list = document.getElementById("lawArticlesList");
-    btn.textContent = state.redSheetOn ? "赤シート：ON" : "赤シート：OFF";
+    btn.textContent = state.redSheetOn ? "赤シート：ON（暗記モード）" : "赤シート：OFF（閲覧モード）";
     btn.className = state.redSheetOn ? "btn btn-danger btn-sm" : "btn btn-secondary btn-sm";
     list.classList.toggle("redsheet-on", state.redSheetOn);
   });
@@ -763,6 +823,16 @@ function renderLawView() {
   const statutes = state.studyPack?.statutes || [];
   const tabs = document.getElementById("lawTabs");
   tabs.innerHTML = "";
+
+  const allBtn = document.createElement("button");
+  allBtn.className = `tab-pill ${state.activeLawIdx === -1 ? "active" : ""}`;
+  allBtn.textContent = `すべて（横断検索）`;
+  allBtn.addEventListener("click", () => {
+    state.activeLawIdx = -1;
+    renderLawView();
+  });
+  tabs.appendChild(allBtn);
+
   statutes.forEach((law, idx) => {
     const btn = document.createElement("button");
     btn.className = `tab-pill ${idx === state.activeLawIdx ? "active" : ""}`;
@@ -778,33 +848,43 @@ function renderLawView() {
 
 function renderLawArticles() {
   const statutes = state.studyPack?.statutes || [];
-  const law = statutes[state.activeLawIdx];
   const container = document.getElementById("lawArticlesList");
-  if (!law) {
+  if (!statutes.length) {
     container.innerHTML = "<p>法令データを読み込み中です...</p>";
     return;
   }
 
   const kw = document.getElementById("lawSearch").value.trim();
-  const filtered = law.articles.filter((a) => {
-    if (!kw) return true;
-    return `${a.title} ${a.caption} ${a.body}`.includes(kw);
+  const targetLaws = state.activeLawIdx === -1 ? statutes : [statutes[state.activeLawIdx]].filter(Boolean);
+
+  const matched = [];
+  targetLaws.forEach((law) => {
+    law.articles.forEach((art) => {
+      if (!kw || `${law.name} ${law.short} ${art.title} ${art.caption} ${art.body}`.includes(kw)) {
+        matched.push({ lawShort: law.short, art });
+      }
+    });
   });
 
-  // 本則の重複条文（附則の同番号）を簡潔にするため最大60件表示
-  const shown = filtered.slice(0, 60);
+  const shown = matched.slice(0, 80);
   container.innerHTML = "";
   if (shown.length === 0) {
-    container.innerHTML = `<div class="card">該当する条文が見つかりません。</div>`;
+    container.innerHTML = `<div class="card">該当する条文が見つかりません。別のキーワードでお試しください。</div>`;
     return;
   }
 
-  shown.forEach((art) => {
+  const countNote = document.createElement("div");
+  countNote.style.cssText = "font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:10px;";
+  countNote.textContent = `該当条文：${matched.length}件${matched.length > 80 ? "（先頭80件を表示）" : ""}`;
+  container.appendChild(countNote);
+
+  shown.forEach(({ lawShort, art }) => {
     const div = document.createElement("div");
     div.className = "article-card";
     const bodyHtml = highlightClozeHtml(escapeHtml(art.body), art.keywords || []);
     div.innerHTML = `
       <div class="article-head">
+        <span class="badge badge-subj">${escapeHtml(lawShort)}</span>
         <span class="article-title">${escapeHtml(art.title)}</span>
         <span class="article-caption">${escapeHtml(art.caption || "")}</span>
       </div>

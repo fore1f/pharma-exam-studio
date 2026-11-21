@@ -536,6 +536,116 @@ html, body {
   color: #fff;
 }
 
+/* Text-mode Question & Shuffled Choice Cards (Mobile-friendly) */
+.q-stem-box {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  font-size: 16px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
+.font-large .q-stem-box {
+  font-size: 19px;
+  line-height: 1.85;
+}
+
+.choices-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.choice-card-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 2px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 12px;
+  padding: 13px 14px;
+  font-size: 15px;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  font-family: inherit;
+}
+
+.font-large .choice-card-btn {
+  font-size: 18px;
+  padding: 15px 16px;
+}
+
+.choice-card-btn:hover {
+  border-color: var(--primary);
+  background: var(--surface-soft);
+}
+
+.choice-card-btn.selected {
+  border-color: var(--primary);
+  background: #ecfdf5;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.18);
+}
+
+.choice-card-btn.correct {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: #065f46;
+}
+
+.choice-card-btn.wrong {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: #991b1b;
+}
+
+.choice-label-badge {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  margin-top: 1px;
+}
+
+.choice-card-btn.selected .choice-label-badge {
+  background: var(--primary);
+  color: #fff;
+}
+
+.choice-card-btn.correct .choice-label-badge {
+  background: var(--success);
+  color: #fff;
+}
+
+.choice-card-btn.wrong .choice-label-badge {
+  background: var(--danger);
+  color: #fff;
+}
+
+.q-display-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .judge-box {
   border-radius: 12px;
   padding: 14px 16px;

@@ -39,16 +39,16 @@
     <!-- PC Sidebar -->
     <aside class="sidebar">
       <div class="brand" id="pcBrandTitle">
-        <span class="brand-badge">公式過去問 1,725問 + 最新法令</span>
+        <span class="brand-badge">公式過去問 10年分 3,450問</span>
         <h1>薬剤師国家試験<br />過去問＆法令マスター</h1>
-        <p>第107〜111回・全9科目対応</p>
+        <p>第102〜111回・全9科目対応</p>
       </div>
 
       <button class="nav-btn active" data-view="exam">
-        <span class="nav-icon">📝</span> 過去問演習（1,725問）
+        <span class="nav-icon">📝</span> 過去問演習（3,450問）
       </button>
       <button class="nav-btn" data-view="law">
-        <span class="nav-icon">⚖️</span> 法律・赤シート暗記
+        <span class="nav-icon">⚖️</span> 法令検索・赤シート暗記
       </button>
       <button class="nav-btn" data-view="ox">
         <span class="nav-icon">⚡</span> 一問一答・○×演習
@@ -73,8 +73,8 @@
       <!-- 1. 過去問演習 -->
       <section id="view-exam" class="view-section active">
         <div class="hero-banner">
-          <h2>公式過去問 1,725問（5年分）でガッチリ合格力をつける</h2>
-          <p>厚生労働省の公式過去問（第107〜111回）を本物そのままの図表・化学構造式で収録。間違えた問題も1タップで解説チェック！</p>
+          <h2>公式過去問 10年分・3,450問でガッチリ合格力をつける</h2>
+          <p>厚生労働省の公式過去問（第102〜111回）を完全収録！選択肢シャッフル＆スマホ拡大表示でスキマ時間も快適に学習できます。</p>
           <div class="quick-chips">
             <button class="quick-chip" id="qsHissu10">🔥 必須ランダム10問</button>
             <button class="quick-chip" id="qsLawAll">⚖️ 法規・制度だけ集中</button>
@@ -88,12 +88,17 @@
             <div class="field">
               <label for="fExam">試験回</label>
               <select id="fExam">
-                <option value="all">すべて（第107〜111回・1,725問）</option>
+                <option value="all">すべて（10年分・3,450問）</option>
                 <option value="111" selected>第111回（2026年）</option>
                 <option value="110">第110回（2025年）</option>
                 <option value="109">第109回（2024年）</option>
                 <option value="108">第108回（2023年）</option>
                 <option value="107">第107回（2022年）</option>
+                <option value="106">第106回（2021年）</option>
+                <option value="105">第105回（2020年）</option>
+                <option value="104">第104回（2019年）</option>
+                <option value="103">第103回（2018年）</option>
+                <option value="102">第102回（2017年）</option>
               </select>
             </div>
             <div class="field">
@@ -152,6 +157,13 @@
             </div>
           </div>
 
+          <div class="q-display-controls">
+            <button type="button" class="btn btn-primary btn-sm" id="btnToggleChoiceShuffle">🔀 選択肢シャッフル：ON</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnToggleFontSize">🔤 文字サイズ：標準</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnTogglePdfImg" style="display:none;">📄 元の試験用紙を見る</button>
+          </div>
+
+          <div id="qStemBox" class="q-stem-box" style="display:none;"></div>
           <div id="qImages" class="q-images"></div>
 
           <div id="qSelectHint" style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-bottom:6px;"></div>
@@ -181,27 +193,27 @@
 
       <!-- 2. 法律・赤シート暗記 -->
       <section id="view-law" class="view-section">
-        <h2 class="page-title">⚖️ 法律・赤シート暗記（最新条文）</h2>
-        <p class="page-subtitle">国の公式データベース（e-Gov）から取得した最新の重要条文。数字・期限・許可権者を赤シートで隠して反復暗記できます。</p>
+        <h2 class="page-title">⚖️ 法令検索・赤シート暗記（最新条文）</h2>
+        <p class="page-subtitle">国の公式データベース（e-Gov）から取得した5大法令の最新条文を横断検索・閲覧・赤シート暗記できます。</p>
+
+        <div class="card" style="padding:12px 16px;">
+          <input type="search" id="lawSearch" placeholder="🔍 全法令からキーワード検索（例：処方箋、保存、30日、麻薬、廃棄、医療提供施設）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
+        </div>
 
         <div class="law-tabs" id="lawTabs"></div>
 
         <div class="redsheet-bar">
           <div>
             <strong style="color:#be123c;">📕 赤シート暗記モード</strong>
-            <span style="font-size:12px; color:#881337; display:block;">ONにすると重要語句が赤く隠れます。赤い部分をタップすると1つずつ確認できます。</span>
+            <span style="font-size:12px; color:#881337; display:block;">OFFにすると通常の法令集としてそのまま読めます。ONで重要語句を隠して暗記！</span>
           </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <button class="btn btn-danger btn-sm" id="btnToggleRedSheet">赤シート：ON</button>
+            <button class="btn btn-secondary btn-sm" id="btnToggleRedSheet">赤シート：OFF（閲覧モード）</button>
             <button class="btn btn-secondary btn-sm" id="btnResetCloze">全部隠し直す</button>
           </div>
         </div>
 
-        <div class="card" style="padding:12px 16px;">
-          <input type="search" id="lawSearch" placeholder="条文を検索（例：処方箋、保存、30日、麻薬、廃棄）" style="width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; font-size:14px;" />
-        </div>
-
-        <div id="lawArticlesList" class="redsheet-on"></div>
+        <div id="lawArticlesList"></div>
       </section>
 
       <!-- 3. 一問一答・○×演習 -->
