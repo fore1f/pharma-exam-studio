@@ -410,7 +410,12 @@ function bindExamControls() {
 
   document.getElementById("btnTogglePdfImg").addEventListener("click", () => {
     state.pdfImgVisible = !state.pdfImgVisible;
-    document.getElementById("qImages").style.display = state.pdfImgVisible ? "flex" : "none";
+    const imgBox = document.getElementById("qImages");
+    const hasLead = imgBox.querySelectorAll(".js-lead-img").length > 0;
+    imgBox.querySelectorAll(".js-body-img").forEach((el) => {
+      el.style.display = state.pdfImgVisible ? "block" : "none";
+    });
+    imgBox.style.display = state.pdfImgVisible || hasLead ? "flex" : "none";
     document.getElementById("btnTogglePdfImg").textContent = state.pdfImgVisible ? "📄 試験用紙を隠す" : "📄 元の試験用紙を見る";
   });
 
@@ -601,16 +606,21 @@ function renderCurrentQuestion() {
   updateBookmarkButton(q.id);
 
   // 画像・テキスト表示モード切替
-  const useTextMode = Boolean(q.can_shuffle && q.stem && q.choices && q.choices.length > 0);
+  // 問題本体に図表がある場合は二重表示を防ぐため画像モード(1〜5)に統一。
+  // 連問の共通リード文(lead_*.jpg)のみの場合はリード文画像を上に表示し、問題本体はテキスト＋1〜5シャッフルでスッキリ表示！
+  const leadImgs = (q.images || []).filter((src) => src.includes("lead_"));
+  const bodyImgs = (q.images || []).filter((src) => !src.includes("lead_"));
+  const hasNonLeadFigure = Boolean(q.show_img_alongside && !q.has_lead);
+  const useTextMode = Boolean(q.can_shuffle && q.stem && q.choices && q.choices.length > 0 && !hasNonLeadFigure);
   const stemBox = document.getElementById("qStemBox");
   const imgBox = document.getElementById("qImages");
   const pdfToggleBtn = document.getElementById("btnTogglePdfImg");
 
   imgBox.innerHTML = "";
-  (q.images || []).forEach((src, idx) => {
+  const appendImgWrap = (src, isLead, extraClass = "") => {
     const wrap = document.createElement("div");
-    wrap.className = "q-img-wrap";
-    if (q.has_lead && src.includes("lead_")) {
+    wrap.className = `q-img-wrap ${extraClass}`.trim();
+    if (isLead) {
       const tag = document.createElement("div");
       tag.className = "lead-tag";
       tag.textContent = "📌 共通の症例・処方箋・リード文（タップで拡大）";
@@ -619,30 +629,35 @@ function renderCurrentQuestion() {
     const img = document.createElement("img");
     img.src = `./${src}`;
     img.alt = `第${q.exam}回 問${q.q_no}`;
-    img.loading = idx === 0 ? "eager" : "lazy";
+    img.loading = "eager";
     img.addEventListener("click", () => {
       document.getElementById("zoomImgTarget").src = img.src;
       document.getElementById("zoomModal").classList.add("open");
     });
     wrap.appendChild(img);
     imgBox.appendChild(wrap);
-  });
+  };
 
   if (useTextMode) {
+    // 共通リード文は常に表示し、元の問題本体画像（選択肢が重複して写っている画像）はトグル表示
+    leadImgs.forEach((src) => appendImgWrap(src, true, "js-lead-img"));
+    bodyImgs.forEach((src) => appendImgWrap(src, false, "js-body-img"));
     stemBox.style.display = "block";
     stemBox.textContent = q.stem;
-    state.pdfImgVisible = Boolean(q.show_img_alongside);
-    imgBox.style.display = state.pdfImgVisible ? "flex" : "none";
+    state.pdfImgVisible = false;
+    imgBox.querySelectorAll(".js-body-img").forEach((el) => (el.style.display = "none"));
+    imgBox.style.display = leadImgs.length > 0 ? "flex" : "none";
     pdfToggleBtn.style.display = "inline-flex";
-    pdfToggleBtn.textContent = state.pdfImgVisible ? "📄 試験用紙を隠す" : "📄 元の試験用紙を見る";
+    pdfToggleBtn.textContent = "📄 元の試験用紙を見る";
   } else {
+    (q.images || []).forEach((src) => appendImgWrap(src, src.includes("lead_")));
     stemBox.style.display = "none";
     state.pdfImgVisible = true;
     imgBox.style.display = "flex";
     pdfToggleBtn.style.display = "none";
   }
 
-  // 選択肢ボタン
+  // 選択肢ボタン（すべて 1〜5 に統一）
   const hint = document.getElementById("qSelectHint");
   if (q.multi_mode === "none") {
     hint.textContent = "※この問題は公式発表により「採点除外・解なし」となっています。";
@@ -657,7 +672,7 @@ function renderCurrentQuestion() {
       (q.select_count > 1
         ? `選択肢から ${q.select_count}つ 選んでください`
         : "選択肢から 1つ 選んでください") +
-      " ※図表・構造式問題のため試験用紙のまま表示（画像タップで拡大できます）";
+      " ※画像タップで拡大できます";
   }
 
   const choicesEl = document.getElementById("qChoices");
@@ -668,13 +683,12 @@ function renderCurrentQuestion() {
     if (state.shuffleChoices) {
       shuffleArray(list);
     }
-    const letters = ["A", "B", "C", "D", "E", "F"];
     list.forEach((item, idx) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "choice-card-btn";
       btn.dataset.choice = String(item.orig);
-      const label = state.shuffleChoices ? letters[idx] || String(idx + 1) : String(item.orig);
+      const label = state.shuffleChoices ? String(idx + 1) : String(item.orig);
       btn.innerHTML = `<span class="choice-label-badge">${label}</span><span>${escapeHtml(item.text)}</span>`;
       btn.addEventListener("click", () => toggleChoice(item.orig, q.select_count));
       choicesEl.appendChild(btn);
@@ -1552,7 +1566,12 @@ function bindMockControls() {
 
   document.getElementById("btnMockPdfToggle").addEventListener("click", () => {
     state.mock.pdfVisible = !state.mock.pdfVisible;
-    document.getElementById("mqImages").style.display = state.mock.pdfVisible ? "flex" : "none";
+    const imgBox = document.getElementById("mqImages");
+    const hasLead = imgBox.querySelectorAll(".js-lead-img").length > 0;
+    imgBox.querySelectorAll(".js-body-img").forEach((el) => {
+      el.style.display = state.mock.pdfVisible ? "block" : "none";
+    });
+    imgBox.style.display = state.mock.pdfVisible || hasLead ? "flex" : "none";
     document.getElementById("btnMockPdfToggle").textContent = state.mock.pdfVisible
       ? "📄 試験用紙を隠す"
       : "📄 元の試験用紙を見る";
@@ -1850,16 +1869,19 @@ function renderMockQuestion() {
   updateMockFlagBtn();
 
   const list = state.mock.shuffledMap[i];
-  const useTextMode = Boolean(list && q.stem);
+  const leadImgs = (q.images || []).filter((src) => src.includes("lead_"));
+  const bodyImgs = (q.images || []).filter((src) => !src.includes("lead_"));
+  const hasNonLeadFigure = Boolean(q.show_img_alongside && !q.has_lead);
+  const useTextMode = Boolean(list && q.stem && !hasNonLeadFigure);
   const stemBox = document.getElementById("mqStemBox");
   const imgBox = document.getElementById("mqImages");
   const pdfBtn = document.getElementById("btnMockPdfToggle");
 
   imgBox.innerHTML = "";
-  (q.images || []).forEach((src, idx) => {
+  const appendMockImg = (src, isLead, extraClass = "") => {
     const wrap = document.createElement("div");
-    wrap.className = "q-img-wrap";
-    if (q.has_lead && src.includes("lead_")) {
+    wrap.className = `q-img-wrap ${extraClass}`.trim();
+    if (isLead) {
       const tag = document.createElement("div");
       tag.className = "lead-tag";
       tag.textContent = "📌 共通の症例・処方箋・リード文（タップで拡大）";
@@ -1868,23 +1890,27 @@ function renderMockQuestion() {
     const img = document.createElement("img");
     img.src = `./${src}`;
     img.alt = `第${q.exam}回 問${q.q_no}`;
-    img.loading = idx === 0 ? "eager" : "lazy";
+    img.loading = "eager";
     img.addEventListener("click", () => {
       document.getElementById("zoomImgTarget").src = img.src;
       document.getElementById("zoomModal").classList.add("open");
     });
     wrap.appendChild(img);
     imgBox.appendChild(wrap);
-  });
+  };
 
   if (useTextMode) {
+    leadImgs.forEach((src) => appendMockImg(src, true, "js-lead-img"));
+    bodyImgs.forEach((src) => appendMockImg(src, false, "js-body-img"));
     stemBox.style.display = "block";
     stemBox.textContent = q.stem;
-    state.mock.pdfVisible = Boolean(q.show_img_alongside);
-    imgBox.style.display = state.mock.pdfVisible ? "flex" : "none";
+    state.mock.pdfVisible = false;
+    imgBox.querySelectorAll(".js-body-img").forEach((el) => (el.style.display = "none"));
+    imgBox.style.display = leadImgs.length > 0 ? "flex" : "none";
     pdfBtn.style.display = "inline-flex";
-    pdfBtn.textContent = state.mock.pdfVisible ? "📄 試験用紙を隠す" : "📄 元の試験用紙を見る";
+    pdfBtn.textContent = "📄 元の試験用紙を見る";
   } else {
+    (q.images || []).forEach((src) => appendMockImg(src, src.includes("lead_")));
     stemBox.style.display = "none";
     state.mock.pdfVisible = true;
     imgBox.style.display = "flex";
@@ -1901,7 +1927,6 @@ function renderMockQuestion() {
   const chosenSet = state.mock.answers[i] || new Set();
   const choicesEl = document.getElementById("mqChoices");
   choicesEl.innerHTML = "";
-  const letters = ["A", "B", "C", "D", "E", "F"];
 
   if (useTextMode) {
     choicesEl.className = "choices-cards";
@@ -1910,7 +1935,7 @@ function renderMockQuestion() {
       btn.type = "button";
       btn.className = `choice-card-btn ${chosenSet.has(item.orig) ? "selected" : ""}`;
       btn.dataset.choice = String(item.orig);
-      const lbl = state.shuffleChoices ? letters[idx] || String(idx + 1) : String(item.orig);
+      const lbl = state.shuffleChoices ? String(idx + 1) : String(item.orig);
       btn.innerHTML = `<span class="choice-label-badge">${lbl}</span><span>${escapeHtml(item.text)}</span>`;
       btn.addEventListener("click", () => toggleMockChoice(i, item.orig, q.select_count));
       choicesEl.appendChild(btn);
