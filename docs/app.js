@@ -1632,7 +1632,7 @@ function updateOxTopStatus() {
   const st = getOxSessionStats();
   const pill = document.getElementById("oxScorePill");
   if (pill) {
-    pill.textContent = `解答済 ${st.answered}/${st.total} ｜ ⭕ ${st.correct} ｜ ❌ ${st.wrong}`;
+    pill.textContent = `解答済 ${st.answered}/${st.total} ｜ 正解 ${st.correct} ｜ 不正解 ${st.wrong}`;
   }
   const fill = document.getElementById("oxProgressFill");
   if (fill) {
