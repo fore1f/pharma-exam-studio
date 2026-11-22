@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122u" />
+  <link rel="stylesheet" href="./styles.css?v=20261122w" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -51,10 +51,10 @@
         <span class="nav-icon">⚖️</span> 法令検索・赤シート暗記
       </button>
       <button class="nav-btn" data-view="ox">
-        <span class="nav-icon">⚡</span> 一問一答・○×演習
+        <span class="nav-icon">⚡</span> ○×＆🚨禁忌特訓
       </button>
       <button class="nav-btn" data-view="compare">
-        <span class="nav-icon">🧠</span> 暗記法＆24大比較表
+        <span class="nav-icon">🧠</span> 暗記法＆25大比較表
       </button>
       <button class="nav-btn" data-view="dashboard">
         <span class="nav-icon">🏆</span> 成績・弱点克服
@@ -114,6 +114,7 @@
           <h2>公式過去問 10年分・3,450問でガッチリ合格力をつける</h2>
           <p>厚生労働省の公式過去問（第102〜111回）を完全収録！選択肢シャッフル＆スマホ拡大表示でスキマ時間も快適に学習できます。</p>
           <div class="quick-chips">
+            <button class="quick-chip quick-chip-danger" id="qsKinkiOnly">🚨 禁忌・投与禁止 過去問だけ集中</button>
             <button class="quick-chip" id="qsHissu10">🔥 必須ランダム10問</button>
             <button class="quick-chip" id="qsLawAll">⚖️ 法規・制度だけ集中</button>
             <button class="quick-chip" id="qsWrongOnly">🔁 間違えた問題だけ復習</button>
@@ -167,6 +168,7 @@
               <label for="fStatus">学習状態</label>
               <select id="fStatus">
                 <option value="all">すべて</option>
+                <option value="kinki">🚨 禁忌・要注意問題のみ</option>
                 <option value="unanswered">未回答のみ</option>
                 <option value="wrong">間違えた問題のみ</option>
                 <option value="bookmarked">要復習マークのみ</option>
@@ -272,6 +274,10 @@
 
             <h3 style="margin:14px 0 6px; font-size:14px; color:var(--text-sub);">スキマ時間向け・短時間ミニ模試</h3>
             <div class="mock-preset-grid">
+              <button type="button" class="mock-preset-card mock-preset-danger" id="presetKinki15">
+                <h4>🚨 禁忌・要注意 集中模試（15問 / 20分）</h4>
+                <p>過去10年の禁忌関連から出題！本番と同じ「2ミス以下合格・3ミス禁忌落ち」判定つき</p>
+              </button>
               <button type="button" class="mock-preset-card" id="presetHissu10">
                 <h4>🔥 必須ミニ模試（10問 / 10分）</h4>
                 <p>1問1分ペース！10年分の必須問題からランダム出題</p>
@@ -495,10 +501,26 @@
         <div id="lawArticlesList" class="redsheet-on law-font-large"></div>
       </section>
 
-      <!-- 3. 一問一答・○×演習 -->
+      <!-- 3. 一問一答・○×＆禁忌サバイバル -->
       <section id="view-ox" class="view-section">
-        <h2 class="page-title">⚡ 法規・制度 一問一答 ○×スピード演習</h2>
-        <p class="page-subtitle">「許可 vs 届出」「厚労大臣 vs 都道府県知事」「14歳 vs 18歳」など、毎年狙われるひっかけ問題を徹底攻略！全問解き終えると総合結果レポートが出ます。</p>
+        <h2 class="page-title" id="oxPageTitle">⚡ 一問一答 ○×演習＆🚨禁忌サバイバル</h2>
+        <p class="page-subtitle" id="oxPageSub">「法規の超頻出ひっかけ36問」と、本番で3問以上踏むと無条件不合格になる「絶対NG・禁忌サバイバル30問」を徹底攻略！</p>
+
+        <div class="mode-switch-bar">
+          <button type="button" class="mode-switch-btn active" id="tabOxLaw">⚖️ 法規・制度 ○×（36問）</button>
+          <button type="button" class="mode-switch-btn" id="tabOxKinki">🚨 絶対NG！禁忌サバイバル（30問）</button>
+        </div>
+
+        <div id="kinkiLifeBar" class="kinki-life-bar" style="display:none;">
+          <div>
+            <strong id="kinkiLifeTitle" style="font-size:15px;">🚨 禁忌サバイバル中：禁忌ミス 0 / 2（本番基準：2問以下で合格・3問で無条件不合格！）</strong>
+            <span style="font-size:12px; display:block; opacity:0.9;">併用禁忌・妊婦/小児・疾患禁忌・致死的投与ミス・倫理禁忌の「絶対間違えられない30問」</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span class="kinki-hearts" id="kinkiHeartsPill">❤️❤️❤️ セーフ</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnJumpKinkiPast">📝 公式「禁忌過去問(31問)」も解く →</button>
+          </div>
+        </div>
 
         <div class="law-tabs" id="oxCategoryTabs"></div>
 
@@ -555,21 +577,21 @@
         </div>
       </section>
 
-      <!-- 4. 暗記法＆24大比較表 -->
+      <!-- 4. 暗記法＆25大比較表 -->
       <section id="view-compare" class="view-section">
-        <h2 class="page-title">🧠 最強の暗記法＆24大比較表</h2>
-        <p class="page-subtitle">「横並び24大比較表」「めくる暗記カード＆ゴロ64選（3段階仕分け＋耳勉聞き流し）」「直前ゴロ赤シート」で一気に定着！</p>
+        <h2 class="page-title">🧠 最強の暗記法＆25大比較表</h2>
+        <p class="page-subtitle">「横並び25大比較表（🚨絶対NG禁忌表つき）」「めくる暗記カード＆ゴロ64選」「直前ゴロ赤シート」で一気に定着！</p>
 
         <div class="mode-switch-bar">
-          <button type="button" class="mode-switch-btn active" id="tabCmpTables">📊 24大比較表</button>
+          <button type="button" class="mode-switch-btn active" id="tabCmpTables">📊 25大比較表</button>
           <button type="button" class="mode-switch-btn" id="tabFlashCards">🃏 暗記カード＆ゴロ(64)</button>
           <button type="button" class="mode-switch-btn" id="tabGoroSheet">📕 直前ゴロ赤シート</button>
         </div>
 
-        <!-- サブ① 24大比較表 -->
+        <!-- サブ① 25大比較表 -->
         <div id="cmpTablesPanel">
           <div class="card" style="padding:12px 16px;">
-            <input type="search" id="cmpSearch" placeholder="🔍 24大比較表を検索（例：30日、ワルファリン、メトホルミン、ステロイド、アレルギー、ホルモン）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
+            <input type="search" id="cmpSearch" placeholder="🔍 25大比較表を検索（例：禁忌、30日、ワルファリン、メトホルミン、ステロイド、ホルモン）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
           </div>
 
           <div class="law-tabs" id="cmpCategoryTabs"></div>
@@ -712,6 +734,10 @@
             <div class="kpi-label">間違えた問題（要復習）</div>
             <div class="kpi-val" id="kpiWrong" style="color:var(--danger);">0問</div>
           </div>
+          <div class="kpi-card" style="border-color:#fecaca; background:#fff5f5;">
+            <div class="kpi-label" style="color:#991b1b;">🚨 禁忌・要注意 正答率</div>
+            <div class="kpi-val" id="kpiKinki" style="color:#b91c1c; font-size:22px;">未挑戦</div>
+          </div>
         </div>
 
         <div class="card">
@@ -748,7 +774,7 @@
   <nav class="bottom-nav">
     <button class="active" data-view="exam"><span class="b-icon">📝</span>過去問</button>
     <button data-view="law"><span class="b-icon">⚖️</span>法令暗記</button>
-    <button data-view="ox"><span class="b-icon">⚡</span>○×演習</button>
+    <button data-view="ox"><span class="b-icon">⚡</span>○×・禁忌</button>
     <button data-view="compare"><span class="b-icon">🧠</span>暗記・表</button>
     <button data-view="dashboard"><span class="b-icon">🏆</span>成績</button>
   </nav>
@@ -835,6 +861,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122u"></script>
+  <script src="./app.js?v=20261122w"></script>
 </body>
 </html>

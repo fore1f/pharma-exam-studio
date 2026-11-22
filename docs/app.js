@@ -76,6 +76,7 @@ const state = {
 
   // 法令・○×・比較表・暗記カード
   studyPack: null,
+  kinkiPastSet: new Set(),
   activeLawIdx: 1, // デフォルトで薬機法を選択（-1 = 全法令横断）
   redSheetOn: true,
   lawSort: "order", // "order" | "freq"
@@ -84,6 +85,7 @@ const state = {
   lawAudioActive: false,
   lawShownList: [],
   lawReturnTarget: null, // { label, artIdx }
+  oxMode: "law", // "law" | "kinki"
   oxCategory: "すべて",
   oxList: [],
   oxIndex: 0,
@@ -528,13 +530,23 @@ async function loadAllExams() {
   await Promise.all(ALL_EXAM_NUMS.map((n) => loadExamData(n)));
 }
 
+function isKinkiPastQuestion(qid) {
+  return state.kinkiPastSet && state.kinkiPastSet.has(qid);
+}
+
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122u");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122w");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
+  state.kinkiPastSet = new Set(state.studyPack.kinki_past_qids || []);
   state.oxList = [...(state.studyPack.ox_questions || [])];
   state.fcDeck = [...(state.studyPack.flashcards || [])];
+  const pastBtn = document.getElementById("btnJumpKinkiPast");
+  const kCnt = (state.studyPack.kinki_past_qids || []).length;
+  if (pastBtn && kCnt > 0) pastBtn.textContent = `📝 公式「禁忌過去問(${kCnt}問)」も解く →`;
+  const qsKinki = document.getElementById("qsKinkiOnly");
+  if (qsKinki && kCnt > 0) qsKinki.textContent = `🚨 禁忌・投与禁止 過去問だけ集中（${kCnt}問）`;
   return state.studyPack;
 }
 
@@ -628,6 +640,8 @@ function bindExamControls() {
   });
 
   // クイックスタート
+  document.getElementById("qsKinkiOnly")?.addEventListener("click", () => openKinkiPastQuestions());
+
   document.getElementById("qsHissu10").addEventListener("click", async () => {
     await loadAllExams();
     document.getElementById("fExam").value = "all";
@@ -739,6 +753,7 @@ async function applyExamFilter() {
   state.filteredQuestions = pool.filter((q) => {
     if (fSection !== "all" && q.section !== fSection) return false;
     if (fSubject !== "all" && q.subject !== fSubject) return false;
+    if (fStatus === "kinki" && !isKinkiPastQuestion(q.id)) return false;
     if (fStatus === "unanswered" && state.progress.answers[q.id]) return false;
     if (fStatus === "wrong") {
       const a = state.progress.answers[q.id];
@@ -794,10 +809,15 @@ function renderCurrentQuestion() {
       : `<span class="badge" style="background:#fee2e2;color:#991b1b;">前回 ×</span>`
     : "";
 
+  const kinkiBadge = isKinkiPastQuestion(q.id)
+    ? `<span class="badge badge-kinki" title="禁忌・投与禁止・重大安全が問われる超重要問題">🚨 禁忌・要注意</span>`
+    : "";
+
   document.getElementById("qBadges").innerHTML = `
     <span class="badge badge-exam">第${q.exam}回 問${q.q_no}</span>
     <span class="badge badge-sec">${q.section}問題</span>
     <span class="badge badge-subj">${q.subject}</span>
+    ${kinkiBadge}
     ${q.select_count > 1 ? `<span class="badge badge-multi">${q.select_count}つ選択</span>` : ""}
     ${prevBadge}
   `;
@@ -973,10 +993,17 @@ function submitCurrentAnswer() {
   const box = document.getElementById("qJudgeBox");
   box.style.display = "block";
   box.className = `judge-box ${isCorrect ? "ok" : "ng"}`;
+  const kinkiWarnHtml =
+    isKinkiPastQuestion(q.id) && !isCorrect
+      ? `<div class="kinki-alert-note">🚨【禁忌・要注意ミス！】この問題は「禁忌・投与禁止・致死的副作用」が問われる超重要問題です。国家試験本番で禁忌肢を3問以上選ぶと総得点に関わらず不合格（禁忌落ち）になります！必ず「☆ 要復習」を付けて確実に覚えましょう。</div>`
+      : isKinkiPastQuestion(q.id) && isCorrect
+      ? `<div style="margin-top:6px; font-size:12.5px; font-weight:800; color:#065f46;">🛡️ 禁忌・要注意問題をクリア！この判断力を本番でも維持しましょう！</div>`
+      : "";
   box.innerHTML =
     (isCorrect
       ? `🎉 <strong>正解！</strong>（公式正答番号：${official.join("・")}）${q.note ? `<br><small>${q.note}</small>` : ""}`
       : `❌ <strong>不正解</strong>　<strong>公式正答番号：${official.join("・")}</strong>（緑色の選択肢が正解です）${q.note ? `<br><small>${q.note}</small>` : ""}`) +
+    kinkiWarnHtml +
     buildExplainHelperHtml(q, official);
   bindExplainHelperButtons(box, q, official);
 
@@ -1646,10 +1673,59 @@ function highlightClozeHtml(escapedText, keywords) {
   return escapedText.replace(re, `<span class="cloze" title="タップで表示">$1</span>`);
 }
 
+async function openKinkiPastQuestions() {
+  await Promise.all([loadStudyPack(), loadAllExams()]);
+  const kinkiIds = state.studyPack?.kinki_past_qids || [];
+  if (!kinkiIds.length) {
+    alert("禁忌過去問データが見つかりませんでした。");
+    return;
+  }
+  const pool = ALL_EXAM_NUMS.flatMap((n) => state.examCache[n] || []);
+  const byId = new Map(pool.map((q) => [q.id, q]));
+  const matched = kinkiIds.map((id) => byId.get(id)).filter(Boolean);
+  if (!matched.length) {
+    alert("該当する過去問が見つかりませんでした。");
+    return;
+  }
+  document.getElementById("fExam").value = "all";
+  document.getElementById("fSection").value = "all";
+  document.getElementById("fSubject").value = "all";
+  document.getElementById("fStatus").value = "all";
+  document.getElementById("fSearch").value = "";
+  state.filteredQuestions = matched;
+  state.currentIndex = 0;
+  switchView("exam");
+  switchExamSubMode("practice");
+  document.getElementById("examMatchCount").textContent = `🚨 過去10年の公式「禁忌・投与禁止」厳選過去問（${matched.length}問）`;
+  renderCurrentQuestion();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 // =========================================================================
-// 3. 一問一答・○×スピード演習（回答後ロック・全問完了結果レポート・弱点リトライ）
+// 3. 一問一答・○×＆🚨禁忌サバイバル演習（回答後ロック・全問完了結果レポート・弱点リトライ）
 // =========================================================================
+function getOxSourceList() {
+  return state.oxMode === "kinki"
+    ? state.studyPack?.kinki_questions || []
+    : state.studyPack?.ox_questions || [];
+}
+
+function switchOxMode(mode) {
+  state.oxMode = mode;
+  state.oxCategory = "すべて";
+  document.getElementById("tabOxLaw")?.classList.toggle("active", mode === "law");
+  document.getElementById("tabOxKinki")?.classList.toggle("active", mode === "kinki");
+  const lifeBar = document.getElementById("kinkiLifeBar");
+  if (lifeBar) lifeBar.style.display = mode === "kinki" ? "flex" : "none";
+  resetOxSession(false);
+  renderOxView();
+}
+
 function bindOxControls() {
+  document.getElementById("tabOxLaw")?.addEventListener("click", () => switchOxMode("law"));
+  document.getElementById("tabOxKinki")?.addEventListener("click", () => switchOxMode("kinki"));
+  document.getElementById("btnJumpKinkiPast")?.addEventListener("click", () => openKinkiPastQuestions());
+
   document.getElementById("btnOxTrue").addEventListener("click", () => answerOx(true));
   document.getElementById("btnOxFalse").addEventListener("click", () => answerOx(false));
 
@@ -1702,13 +1778,13 @@ function bindOxControls() {
   });
 
   document.getElementById("btnOxRetryAllShuffle").addEventListener("click", () => {
-    const all = state.studyPack?.ox_questions || [];
+    const all = getOxSourceList();
     state.oxList = state.oxCategory === "すべて" ? [...all] : all.filter((q) => q.category === state.oxCategory);
     resetOxSession(true);
   });
 
   document.getElementById("btnOxRetryAll").addEventListener("click", () => {
-    const all = state.studyPack?.ox_questions || [];
+    const all = getOxSourceList();
     state.oxList = state.oxCategory === "すべて" ? [...all] : all.filter((q) => q.category === state.oxCategory);
     resetOxSession(false);
   });
@@ -1733,7 +1809,7 @@ function bindOxControls() {
 
 function resetOxSession(doShuffle, keepList = false) {
   if (!keepList) {
-    const all = state.studyPack?.ox_questions || [];
+    const all = getOxSourceList();
     state.oxList = state.oxCategory === "すべて" ? [...all] : all.filter((q) => q.category === state.oxCategory);
   }
   if (doShuffle) shuffleArray(state.oxList);
@@ -1767,7 +1843,7 @@ function getOxSessionStats() {
 }
 
 function renderOxView() {
-  const all = state.studyPack?.ox_questions || [];
+  const all = getOxSourceList();
   const cats = ["すべて", ...new Set(all.map((q) => q.category))];
   const tabs = document.getElementById("oxCategoryTabs");
   tabs.innerHTML = "";
@@ -1783,6 +1859,8 @@ function renderOxView() {
     });
     tabs.appendChild(btn);
   });
+  const lifeBar = document.getElementById("kinkiLifeBar");
+  if (lifeBar) lifeBar.style.display = state.oxMode === "kinki" ? "flex" : "none";
   if (!state.oxStartMs) state.oxStartMs = Date.now();
   if (!state.oxSummaryShown) {
     renderOxCard();
@@ -1799,6 +1877,31 @@ function updateOxTopStatus() {
   if (fill) {
     const pct = st.total > 0 ? Math.round((st.answered / st.total) * 100) : 0;
     fill.style.width = `${pct}%`;
+  }
+
+  // 禁忌サバイバルモード時の本番基準ライフゲージ更新（2ミス以下で合格・3ミス以上で禁忌落ち！）
+  if (state.oxMode === "kinki") {
+    const bar = document.getElementById("kinkiLifeBar");
+    const title = document.getElementById("kinkiLifeTitle");
+    const hearts = document.getElementById("kinkiHeartsPill");
+    if (bar && title && hearts) {
+      bar.classList.remove("kinki-warn", "kinki-dead");
+      if (st.wrong === 0) {
+        title.textContent = "🚨 禁忌サバイバル中：禁忌ミス 0 / 2（本番基準：2問以下で合格・3問で無条件不合格！）";
+        hearts.textContent = "❤️❤️❤️ セーフ（ミス0）";
+      } else if (st.wrong === 1) {
+        title.textContent = "⚠️ 禁忌ミス 1 / 2（あと1回まで！絶対慎重に確認しよう）";
+        hearts.textContent = "❤️❤️💔 ミス 1/2";
+      } else if (st.wrong === 2) {
+        bar.classList.add("kinki-warn");
+        title.textContent = "🔥 警告！禁忌ミス 2 / 2（もう1問でも落とすと本番では禁忌落ち＝不合格！）";
+        hearts.textContent = "❤️💔💔 崖っぷち 2/2";
+      } else {
+        bar.classList.add("kinki-dead");
+        title.textContent = `💀 禁忌ミス ${st.wrong}問（本番基準「2問以下」を超過！最後まで解き切って弱点を全部潰そう）`;
+        hearts.textContent = `💀 禁忌落ち圏 (${st.wrong}ミス)`;
+      }
+    }
   }
 }
 
@@ -1899,7 +2002,8 @@ function answerOx(choiceBool) {
   const isCorrect = choiceBool === q.answer;
   state.oxAnswered = true;
   state.oxSessionAnswers[q.id] = { chosen: choiceBool, correct: isCorrect };
-  recordActivity("ox_answer", q.id, `○×:${q.category}`, isCorrect);
+  const prefix = state.oxMode === "kinki" ? "禁忌" : "○×";
+  recordActivity("ox_answer", q.id, `${prefix}:${q.category}`, isCorrect);
   renderOxCard();
 }
 
@@ -1909,30 +2013,41 @@ function showOxSummary() {
   const elapsedSec = Math.max(1, Math.floor((Date.now() - (state.oxStartMs || Date.now())) / 1000));
   const pct = st.total > 0 ? Math.round((st.correct / st.total) * 100) : 0;
   const avgSec = st.total > 0 ? Math.round(elapsedSec / st.total) : 0;
-  const isGreat = pct >= 80;
+  const isKinki = state.oxMode === "kinki";
+  const isGreat = isKinki ? st.wrong <= 2 : pct >= 80;
 
   if (!state.oxSummaryReported) {
     state.oxSummaryReported = true;
     recordActivity(
       "ox_finish",
       `${st.correct}/${st.total} (${pct}%) ${formatMinSec(elapsedSec)}`,
-      `○×完走:${state.oxCategory}`,
+      `${isKinki ? "🚨禁忌サバイバル完走" : "○×完走"}:${state.oxCategory}`,
       isGreat
     );
   }
 
   const hero = document.getElementById("oxSummaryHero");
   hero.className = `mock-result-hero ${isGreat ? "pass" : "fail"}`;
-  const msg =
-    pct === 100
-      ? "🏆 パーフェクト全問正解！！完璧です！"
-      : pct >= 80
-      ? "🎉 合格圏（80%以上）クリア！素晴らしい仕上がりです！"
-      : "💪 間違えたひっかけ問題を今すぐ解き直して100%にしましょう！";
+  let msg = "";
+  if (isKinki) {
+    msg =
+      st.wrong === 0
+        ? "🏆 禁忌ミス0問！パーフェクト生還！本番でも絶対大丈夫です！"
+        : st.wrong <= 2
+        ? `🎉 禁忌サバイバル合格！（ミス ${st.wrong}問 ／ 本番基準2問以下クリア）残りのミスも0にして万全に！`
+        : `💀 禁忌落ち警告！（ミス ${st.wrong}問 ／ 本番では3問以上で無条件不合格…今すぐ間違えた禁忌だけ完全攻略しよう！）`;
+  } else {
+    msg =
+      pct === 100
+        ? "🏆 パーフェクト全問正解！！完璧です！"
+        : pct >= 80
+        ? "🎉 合格圏（80%以上）クリア！素晴らしい仕上がりです！"
+        : "💪 間違えたひっかけ問題を今すぐ解き直して100%にしましょう！";
+  }
 
   hero.innerHTML = `
     <div style="font-size:13px; font-weight:800; color:${isGreat ? "#065f46" : "#991b1b"};">
-      ⚡ 法規・制度 ○×スピード演習（${escapeHtml(state.oxCategory)}・全${st.total}問）結果
+      ${isKinki ? "🚨 絶対NG！禁忌サバイバル演習" : "⚡ 法規・制度 ○×スピード演習"}（${escapeHtml(state.oxCategory)}・全${st.total}問）結果
     </div>
     <div class="mock-score-big" style="color:${isGreat ? "#059669" : "#dc2626"};">
       ${st.correct} / ${st.total} 問（${pct}%）
@@ -2476,7 +2591,7 @@ function openCrossCompareTableQuiz() {
   }
   shuffleArray(pool);
   const questions = pool.slice(0, Math.min(10, pool.length));
-  const label = state.cmpCategory === "すべて" ? "全24大比較表 横断10問テスト" : `${state.cmpCategory} 横断テスト`;
+  const label = state.cmpCategory === "すべて" ? "全25大比較表 横断10問テスト" : `${state.cmpCategory} 横断テスト`;
   runCompareQuizModal(`🔥 ${label}`, questions, () => openCrossCompareTableQuiz());
 }
 
@@ -2867,6 +2982,28 @@ function renderDashboard() {
   document.getElementById("kpiAcc").textContent = s.total > 0 ? `${s.acc}%` : "-";
   document.getElementById("kpiWrong").textContent = `${s.wrong}問`;
 
+  // 禁忌・要注意問題の正答率集計
+  const kinkiEl = document.getElementById("kpiKinki");
+  if (kinkiEl) {
+    const kIds = state.studyPack?.kinki_past_qids || [];
+    let kAns = 0;
+    let kOk = 0;
+    kIds.forEach((id) => {
+      const a = state.progress.answers[id];
+      if (a) {
+        kAns += 1;
+        if (a.correct) kOk += 1;
+      }
+    });
+    if (kAns === 0) {
+      kinkiEl.textContent = `未挑戦 (全${kIds.length}問)`;
+    } else {
+      const kPct = Math.round((kOk / kAns) * 100);
+      kinkiEl.textContent = `${kPct}% (${kOk}/${kAns})`;
+      kinkiEl.style.color = kPct >= 90 ? "#059669" : kPct >= 70 ? "#d97706" : "#b91c1c";
+    }
+  }
+
   // 科目別集計
   const bySubj = {};
   SUBJECT_LIST.forEach((sub) => (bySubj[sub] = { total: 0, correct: 0 }));
@@ -3148,6 +3285,20 @@ function bindMockControls() {
       limitMin: blk.limitMin,
       shuffleOrder: false,
       isHissuFull: blk.isHissuFull,
+    });
+  });
+
+  document.getElementById("presetKinki15")?.addEventListener("click", async () => {
+    await startMockByConfig({
+      title: "🚨 禁忌・要注意 集中模試（15問）",
+      exam: "all",
+      section: "all",
+      subject: "all",
+      count: 15,
+      limitMin: 20,
+      shuffleOrder: true,
+      isHissuFull: false,
+      kinkiOnly: true,
     });
   });
 
@@ -3780,6 +3931,7 @@ async function startMockByConfig({
   limitMin,
   shuffleOrder,
   isHissuFull = false,
+  kinkiOnly = false,
 }) {
   const overlay = document.getElementById("countdownOverlay");
   const titleEl = document.getElementById("cdExamTitle");
@@ -3796,6 +3948,7 @@ async function startMockByConfig({
 
   // カウントダウン中に裏側で試験データを読み込み
   const dataPromise = (async () => {
+    if (kinkiOnly) await loadStudyPack();
     let pool = [];
     if (exam === "all") {
       await loadAllExams();
@@ -3804,6 +3957,7 @@ async function startMockByConfig({
       pool = await loadExamData(Number(exam));
     }
     let filtered = pool.filter((q) => {
+      if (kinkiOnly && !isKinkiPastQuestion(q.id)) return false;
       if (q.q_no < startQ || q.q_no > endQ) return false;
       if (section !== "all" && q.section !== section) return false;
       if (subject !== "all" && q.subject !== subject) return false;
@@ -4125,6 +4279,8 @@ function finishMockExam(timeUp) {
   const elapsedSec = Math.max(1, Math.floor((Date.now() - state.mock.startMs) / 1000));
   let validTotal = 0;
   let correctCount = 0;
+  let kinkiTotal = 0;
+  let kinkiWrong = 0;
   const bySubj = {};
   const wrongList = [];
   const rowsHtml = [];
@@ -4133,6 +4289,10 @@ function finishMockExam(timeUp) {
     const chosen = [...(state.mock.answers[idx] || new Set())].sort((a, b) => a - b);
     const official = [...(q.answers || [])].sort((a, b) => a - b);
     const spent = state.mock.qSpentSec[idx] || 0;
+    const isKinkiQ = isKinkiPastQuestion(q.id);
+    const kinkiTag = isKinkiQ
+      ? ` <span class="badge badge-kinki" style="font-size:10px; padding:1px 6px;">🚨 禁忌</span>`
+      : "";
     const spentHtml =
       spent >= 120
         ? `<span style="color:#d97706;font-weight:700;">${spent}秒</span>`
@@ -4142,7 +4302,7 @@ function finishMockExam(timeUp) {
       rowsHtml.push(`
         <tr>
           <td>${idx + 1}</td>
-          <td><strong>第${q.exam}回 問${q.q_no}</strong></td>
+          <td><strong>第${q.exam}回 問${q.q_no}</strong>${kinkiTag}</td>
           <td>${escapeHtml(q.subject)}</td>
           <td><span style="color:#0369a1; font-weight:700;">採点除外</span></td>
           <td>${spentHtml}</td>
@@ -4158,6 +4318,11 @@ function finishMockExam(timeUp) {
     if (chosen.length > 0) {
       if (q.multi_mode === "any") isCorrect = chosen.every((c) => official.includes(c));
       else isCorrect = chosen.length === official.length && chosen.every((c, k) => c === official[k]);
+    }
+
+    if (isKinkiQ) {
+      kinkiTotal += 1;
+      if (!isCorrect) kinkiWrong += 1;
     }
 
     if (isCorrect) correctCount += 1;
@@ -4182,9 +4347,9 @@ function finishMockExam(timeUp) {
         : `<span style="color:#dc2626; font-weight:800;">❌ 不正解</span>`;
 
     rowsHtml.push(`
-      <tr>
+      <tr class="${isKinkiQ && !isCorrect ? "kinki-row-ng" : ""}">
         <td>${idx + 1}</td>
-        <td><strong>第${q.exam}回 問${q.q_no}</strong></td>
+        <td><strong>第${q.exam}回 問${q.q_no}</strong>${kinkiTag}</td>
         <td>${escapeHtml(q.subject)}</td>
         <td>${statusBadge}</td>
         <td>${spentHtml}</td>
@@ -4209,7 +4374,9 @@ function finishMockExam(timeUp) {
       }
     });
   }
-  const isPass = pct >= passLine && cutoffFails.length === 0;
+  // 本番の禁忌肢基準（2問以下で合格・3問以上で無条件不合格＝禁忌落ち）を参考判定！
+  const kinkiFailed = kinkiWrong >= 3;
+  const isPass = pct >= passLine && cutoffFails.length === 0 && !kinkiFailed;
 
   // ローカル模試履歴に保存
   if (!state.progress.mockHistory) state.progress.mockHistory = [];
@@ -4250,6 +4417,25 @@ function finishMockExam(timeUp) {
       ? `<div style="margin-top:4px; font-size:12px; color:#065f46; font-weight:700;">✅ 必須科目の足切り基準（全科目30%以上）クリア！</div>`
       : "";
 
+  let kinkiMsg = "";
+  if (kinkiTotal > 0) {
+    if (kinkiFailed) {
+      kinkiMsg = `<div class="kinki-alert-note" style="text-align:left;">💀 禁忌・要注意ミス：<strong>${kinkiWrong}問 / 全${kinkiTotal}問</strong>（本番基準「2問以下」超過 → 禁忌落ちリスク！）<br><span style="font-size:11.5px; font-weight:600;">※厚労省は公式の禁忌肢自体は非公開のため、本アプリ収録の「禁忌・重大安全」関連過去問（全46問）の誤答数で参考判定しています。下の表で 🚨禁忌 マークの問題を必ず復習しましょう！</span></div>`;
+    } else if (kinkiWrong > 0) {
+      kinkiMsg = `<div style="margin-top:8px; padding:8px 12px; border-radius:10px; background:#fffbeb; border:1px solid #f59e0b; color:#92400e; font-size:12.5px; font-weight:800;">⚠️ 禁忌・要注意チェック（参考）：ミス ${kinkiWrong}問 / 全${kinkiTotal}問（本番基準「2問以下」範囲内ですが要復習！）<br><span style="font-size:11px; font-weight:600;">※公式の禁忌肢は非公開のため、禁忌・重大安全関連の過去問で参考判定しています。</span></div>`;
+    } else {
+      kinkiMsg = `<div style="margin-top:6px; font-size:12.5px; color:#065f46; font-weight:800;">🛡️ 禁忌・要注意チェック（参考）：0ミス / 全${kinkiTotal}問（本番基準「2問以下」安全クリア！）</div>`;
+    }
+  } else {
+    kinkiMsg = `<div style="margin-top:6px; font-size:11.5px; color:var(--text-sub);">ℹ️ この出題範囲には「🚨禁忌・要注意」タグ付き過去問は含まれていませんでした（公式の禁忌肢は厚労省非公開）</div>`;
+  }
+
+  const verdictLine = kinkiFailed
+    ? `💀 得点は ${pct}% ですが、禁忌・要注意ミスが3問以上のため「禁忌落ち警告」です！`
+    : isPass
+    ? `🎉 合格基準目安（${passLine}%以上）クリア！素晴らしい結果です！`
+    : `💪 合格基準目安（${passLine}%以上）まであと少し！間違えた問題を復習しましょう`;
+
   const hero = document.getElementById("mockResultHero");
   hero.className = `mock-result-hero ${isPass ? "pass" : "fail"}`;
   hero.innerHTML = `
@@ -4260,16 +4446,20 @@ function finishMockExam(timeUp) {
       ${correctCount} / ${denom} 問（${pct}%）
     </div>
     <div style="font-size:14px; font-weight:700; color:${isPass ? "#065f46" : "#991b1b"};">
-      ${isPass ? `🎉 合格基準目安（${passLine}%以上）クリア！素晴らしい結果です！` : `💪 合格基準目安（${passLine}%以上）まであと少し！間違えた問題を復習しましょう`}
+      ${verdictLine}
     </div>
     ${cutoffMsg}
+    ${kinkiMsg}
   `;
 
+  const kinkiKpiColor = kinkiTotal === 0 ? "var(--text-sub)" : kinkiWrong >= 3 ? "#dc2626" : kinkiWrong > 0 ? "#d97706" : "#059669";
+  const kinkiKpiText = kinkiTotal === 0 ? "該当なし" : `${kinkiWrong} / ${kinkiTotal}問`;
   document.getElementById("mockResultKpis").innerHTML = `
     <div class="kpi-card"><div class="kpi-label">所要時間（開始〜終了）</div><div class="kpi-val">${formatMinSec(elapsedSec)}</div></div>
     <div class="kpi-card"><div class="kpi-label">1問あたり平均時間</div><div class="kpi-val">${avgSec}秒</div></div>
     <div class="kpi-card"><div class="kpi-label">正解数</div><div class="kpi-val" style="color:var(--success);">${correctCount}問</div></div>
     <div class="kpi-card"><div class="kpi-label">間違い・未解答</div><div class="kpi-val" style="color:var(--danger);">${wrongList.length}問</div></div>
+    <div class="kpi-card" style="border-color:#fecaca; background:#fff5f5;"><div class="kpi-label" style="color:#991b1b;">🚨 禁忌ミス(参考)</div><div class="kpi-val" style="color:${kinkiKpiColor}; font-size:22px;">${kinkiKpiText}</div></div>
   `;
 
   const subjEl = document.getElementById("mockResultSubjects");
