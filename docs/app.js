@@ -74,11 +74,12 @@ const state = {
     lastWrongQuestions: [],
   },
 
-  // 法令・○×・比較表
+  // 法令・○×・比較表・暗記カード
   studyPack: null,
   activeLawIdx: 1, // デフォルトで薬機法を選択（-1 = 全法令横断）
   redSheetOn: true,
   lawSort: "order", // "order" | "freq"
+  lawUnmasteredOnly: false,
   lawAudioRate: 1.0,
   lawAudioActive: false,
   lawShownList: [],
@@ -91,8 +92,20 @@ const state = {
   oxStartMs: 0,
   oxSummaryShown: false,
   oxSummaryReported: false,
+  cmpSubMode: "tables", // "tables" | "cards" | "sheet"
   cmpCategory: "すべて",
   cmpMaskOn: false,
+  fcCategory: "すべて",
+  fcFilter: "all", // "all" | "weak" | "unseen"
+  fcDeck: [],
+  fcIndex: 0,
+  fcFlipped: false,
+  fcAudioActive: false,
+  fcAudioRate: 1.0,
+  fcAudioTimer: null,
+  gsCategory: "すべて",
+  gsRedSheetOn: true,
+  gsWeakOnly: false,
 
   // 永続化データ
   progress: loadProgress(),
@@ -124,6 +137,8 @@ function loadProgress() {
         daily: parsed.daily || {}, // { "YYYY-MM-DD": { count, correct, minutes, lastActive } }
         recent: parsed.recent || [], // [{ ts, event, qid, subject, result }]
         mockHistory: parsed.mockHistory || [], // [{ ts, title, correct, total, pct, elapsedSec, pass }]
+        flashMastery: parsed.flashMastery || {}, // { cardId: { level: "hard"|"mid"|"easy", ts } }
+        lawMastered: parsed.lawMastered || {}, // { "薬機法:4": { ok: bool, ts } }
       };
     }
   } catch (_) {}
@@ -135,6 +150,8 @@ function loadProgress() {
     daily: {},
     recent: [],
     mockHistory: [],
+    flashMastery: {},
+    lawMastered: {},
   };
 }
 
@@ -150,13 +167,15 @@ function saveProgress(skipCloudPush = false) {
 
 function buildSyncableProgressPayload() {
   return {
-    v: 1,
+    v: 2,
     updatedAt: Date.now(),
     answers: state.progress.answers || {},
     bookmarks: state.progress.bookmarks || {},
     memos: state.progress.memos || {},
     daily: state.progress.daily || {},
     mockHistory: (state.progress.mockHistory || []).slice(0, 30),
+    flashMastery: state.progress.flashMastery || {},
+    lawMastered: state.progress.lawMastered || {},
   };
 }
 
@@ -169,7 +188,9 @@ function pushProgressToCloudNow() {
       Object.keys(payloadObj.bookmarks).length > 0 ||
       Object.keys(payloadObj.memos).length > 0 ||
       Object.keys(payloadObj.daily).length > 0 ||
-      payloadObj.mockHistory.length > 0;
+      payloadObj.mockHistory.length > 0 ||
+      Object.keys(payloadObj.flashMastery).length > 0 ||
+      Object.keys(payloadObj.lawMastered).length > 0;
     if (!hasAnyData) return;
 
     const body = JSON.stringify({
@@ -263,6 +284,26 @@ function mergeProgressData(local, cloud) {
     localHadNewer = true;
   }
 
+  // 6. flashMastery: 暗記カードの3段階記憶ランクを最新タイムスタンプ優先で統合
+  const mergedFlashMastery = { ...(cloud.flashMastery || {}) };
+  Object.entries(local.flashMastery || {}).forEach(([cid, lVal]) => {
+    const cVal = mergedFlashMastery[cid];
+    if (!cVal || (lVal.ts || 0) > (cVal.ts || 0)) {
+      mergedFlashMastery[cid] = lVal;
+      localHadNewer = true;
+    }
+  });
+
+  // 7. lawMastered: 条文の暗記済チェックを最新タイムスタンプ優先で統合
+  const mergedLawMastered = { ...(cloud.lawMastered || {}) };
+  Object.entries(local.lawMastered || {}).forEach(([lid, lVal]) => {
+    const cVal = mergedLawMastered[lid];
+    if (!cVal || (lVal.ts || 0) > (cVal.ts || 0)) {
+      mergedLawMastered[lid] = lVal;
+      localHadNewer = true;
+    }
+  });
+
   return {
     merged: {
       ...local,
@@ -271,6 +312,8 @@ function mergeProgressData(local, cloud) {
       memos: mergedMemos,
       daily: mergedDaily,
       mockHistory: mergedMockHistory,
+      flashMastery: mergedFlashMastery,
+      lawMastered: mergedLawMastered,
     },
     localHadNewer,
   };
@@ -487,10 +530,11 @@ async function loadAllExams() {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122r");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122u");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.oxList = [...(state.studyPack.ox_questions || [])];
+  state.fcDeck = [...(state.studyPack.flashcards || [])];
   return state.studyPack;
 }
 
@@ -509,6 +553,7 @@ function bindNavigation() {
 
 function switchView(viewName) {
   if (viewName !== "law") stopLawAudio();
+  if (viewName !== "compare") stopFlashcardAudio();
   state.currentView = viewName;
   document.querySelectorAll(".view-section").forEach((s) => s.classList.remove("active"));
   const el = document.getElementById(`view-${viewName}`);
@@ -1085,6 +1130,16 @@ function bindLawControls() {
     stopBtn.addEventListener("click", () => stopLawAudio());
   }
 
+  const unmasteredBtn = document.getElementById("btnLawUnmasteredOnly");
+  if (unmasteredBtn) {
+    unmasteredBtn.addEventListener("click", () => {
+      state.lawUnmasteredOnly = !state.lawUnmasteredOnly;
+      unmasteredBtn.textContent = state.lawUnmasteredOnly ? "⬜ 未暗記だけ：ON" : "⬜ 未暗記だけ：OFF";
+      unmasteredBtn.className = state.lawUnmasteredOnly ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+      renderLawArticles();
+    });
+  }
+
   const lawFontBtn = document.getElementById("btnLawFontSize");
   if (lawFontBtn) {
     lawFontBtn.addEventListener("click", () => {
@@ -1217,6 +1272,68 @@ const LAW_SPEECH_DICT = [
   ["当たつて", "あたって"],
   ["当たつた", "あたった"],
   ["あたらず", "あたらず"],
+  // 薬理・衛生・薬剤の略語読み上げ補正（暗記カードの耳勉用）
+  ["CYP3A4", "シップさんエーよん"],
+  ["CYP2C9", "シップにシーきゅう"],
+  ["CYP2C19", "シップにシーじゅうきゅう"],
+  ["CYP1A2", "シップいちエーに"],
+  ["CYP", "シップ"],
+  ["PK/PD", "ピーケーピーディー"],
+  ["TDM", "ティーディーエム"],
+  ["PT-INR", "ピーティーアイエヌアール"],
+  ["APTT", "エーピーティーティー"],
+  ["PMDA", "ピーエムディーエー"],
+  ["DOAC", "ドアック"],
+  ["SGLT2", "エスジーエルティーツー"],
+  ["DPP-4", "ディーピーピーフォー"],
+  ["GLP-1", "ジーエルピーワン"],
+  ["α-GI", "アルファジーアイ"],
+  ["MRSA", "エムアールエスエー"],
+  ["NSAIDs", "エヌセイズ"],
+  ["HbA1c", "ヘモグロビンエーワンシー"],
+  ["eGFR", "イージーエフアール"],
+  ["BOD", "ビーオーディー"],
+  ["COD", "シーオーディー"],
+  ["DO", "ディーオー"],
+  ["BCG", "ビーシージー"],
+  ["ACE阻害薬", "エースそがいやく"],
+  ["ARB", "エーアールビー"],
+  ["GFJ", "グレープフルーツジュース"],
+  ["UGT1A1", "ユージーティーいちエーいち"],
+  ["MTX", "メトトレキサート"],
+  ["5-FU", "ファイブエフユー"],
+  ["SJS/TEN", "エスジェイエステン"],
+  ["CKD", "シーケーディー"],
+  ["DDS", "ディーディーエス"],
+  ["EPR効果", "イーピーアールこうか"],
+  ["PVC", "ポリ塩化ビニル"],
+  ["DEHP", "ディーイーエイチピー"],
+  ["HPLC", "エイチピーエルシー"],
+  ["ODS", "オーディーエス"],
+  ["NMR", "エヌエムアール"],
+  ["P-gp", "ピー糖タンパク"],
+  ["KATP", "ケーエーティーピー"],
+  ["Gq", "ジーキュー"],
+  ["Gi", "ジーアイ"],
+  ["Gs", "ジーエス"],
+  ["Ⅱa", "にエー"],
+  ["Ⅹa", "じゅうエー"],
+  ["Na⁺", "ナトリウム"],
+  ["Ca²⁺", "カルシウム"],
+  ["SSRI", "エスエスアールアイ"],
+  ["SNRI", "エスエヌアールアイ"],
+  ["NaSSA", "ナッサ"],
+  ["MARTA", "マルタ"],
+  ["SDA", "エスディーエー"],
+  ["CPMS", "シーピーエムエス"],
+  ["SIADH", "エスアイエーディーエイチ"],
+  ["ADH", "エーディーエイチ"],
+  ["PTH", "ピーティーエイチ"],
+  ["IgE", "アイジーイー"],
+  ["IgG", "アイジージー"],
+  ["IgM", "アイジーエム"],
+  ["SLE", "エスエルイー"],
+  ["ITP", "アイティーピー"],
 ];
 
 function normalizeLawSpeechText(rawText) {
@@ -1365,6 +1482,20 @@ function renderLawView() {
   renderLawArticles();
 }
 
+function updateLawMasteredSummary() {
+  const statutes = state.studyPack?.statutes || [];
+  const total = statutes.reduce((acc, s) => acc + (s.articles || []).length, 0);
+  const map = state.progress.lawMastered || {};
+  let done = 0;
+  statutes.forEach((s) => {
+    (s.articles || []).forEach((a) => {
+      if (map[`${s.short}:${a.num}`]?.ok) done += 1;
+    });
+  });
+  const el = document.getElementById("lawMasteredSummary");
+  if (el) el.textContent = `暗記済 ${done} / ${total} 条文`;
+}
+
 function renderLawArticles() {
   const statutes = state.studyPack?.statutes || [];
   const container = document.getElementById("lawArticlesList");
@@ -1373,12 +1504,17 @@ function renderLawArticles() {
     return;
   }
 
+  updateLawMasteredSummary();
+
   const kw = document.getElementById("lawSearch").value.trim();
   const targetLaws = state.activeLawIdx === -1 ? statutes : [statutes[state.activeLawIdx]].filter(Boolean);
+  const masteredMap = state.progress.lawMastered || {};
 
   const matched = [];
   targetLaws.forEach((law) => {
     law.articles.forEach((art) => {
+      const mKey = `${law.short}:${art.num}`;
+      if (state.lawUnmasteredOnly && masteredMap[mKey]?.ok) return;
       if (!kw || `${law.name} ${law.short} ${art.title} ${art.caption} ${art.body}`.includes(kw)) {
         matched.push({ lawShort: law.short, art });
       }
@@ -1393,18 +1529,24 @@ function renderLawArticles() {
   state.lawShownList = shown;
   container.innerHTML = "";
   if (shown.length === 0) {
-    container.innerHTML = `<div class="card">該当する条文が見つかりません。別のキーワードでお試しください。</div>`;
+    container.innerHTML = `<div class="card">${
+      state.lawUnmasteredOnly
+        ? "🎉 この法令の未暗記条文はすべて完了しました！「未暗記だけ：OFF」にすると全条文を見直せます。"
+        : "該当する条文が見つかりません。別のキーワードでお試しください。"
+    }</div>`;
     return;
   }
 
   const countNote = document.createElement("div");
   countNote.style.cssText = "font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:10px;";
-  countNote.textContent = `該当条文：${matched.length}件（${state.lawSort === "freq" ? "過去10年よく出る順" : "条文順"}）`;
+  countNote.textContent = `該当条文：${matched.length}件（${state.lawSort === "freq" ? "過去10年よく出る順" : "条文順"}${state.lawUnmasteredOnly ? "・未暗記のみ" : ""}）`;
   container.appendChild(countNote);
 
   shown.forEach(({ lawShort, art }, idx) => {
+    const mKey = `${lawShort}:${art.num}`;
+    const isMastered = Boolean(masteredMap[mKey]?.ok);
     const div = document.createElement("div");
-    div.className = "article-card";
+    div.className = `article-card${isMastered ? " law-mastered" : ""}`;
     div.dataset.lawIdx = String(idx);
     const bodyHtml = highlightClozeHtml(escapeHtml(art.body), art.keywords || []);
     const cnt = art.exam_count || 0;
@@ -1448,6 +1590,7 @@ function renderLawArticles() {
           ${freqBadge}
         </div>
         <div class="article-head-right">
+          <button type="button" class="btn btn-secondary btn-sm law-master-btn js-law-master ${isMastered ? "done" : ""}">${isMastered ? "✅ 覚えた！" : "⬜ 未暗記"}</button>
           <button type="button" class="btn btn-secondary btn-sm js-law-speak">🔊 読む</button>
           ${pastBtn}
         </div>
@@ -1464,6 +1607,23 @@ function renderLawArticles() {
       ptBtn.addEventListener("click", () => {
         const opened = ptBox.classList.toggle("point-open");
         ptBtn.textContent = opened ? "▲ 暗記ポイントを隠す" : "💡 暗記ポイント・ひっかけを見る ▼";
+      });
+    }
+    const masterBtn = div.querySelector(".js-law-master");
+    if (masterBtn) {
+      masterBtn.addEventListener("click", () => {
+        if (!state.progress.lawMastered) state.progress.lawMastered = {};
+        const nextOk = !Boolean(state.progress.lawMastered[mKey]?.ok);
+        state.progress.lawMastered[mKey] = { ok: nextOk, ts: Date.now() };
+        saveProgress();
+        updateLawMasteredSummary();
+        if (state.lawUnmasteredOnly && nextOk) {
+          renderLawArticles();
+        } else {
+          div.classList.toggle("law-mastered", nextOk);
+          masterBtn.classList.toggle("done", nextOk);
+          masterBtn.textContent = nextOk ? "✅ 覚えた！" : "⬜ 未暗記";
+        }
       });
     }
     div.querySelector(".js-law-speak").addEventListener("click", () => {
@@ -1847,7 +2007,34 @@ function showOxSummary() {
 // =========================================================================
 // 4. 紛らわしい比較表（10大テーマ・検索・列単位開閉・自動4択確認クイズ）
 // =========================================================================
+// 4. 暗記法＆20大比較表（20大比較表・めくる暗記カード60選・直前ゴロ赤シート）
+// =========================================================================
+function switchCmpSubMode(mode) {
+  if (mode !== "cards") stopFlashcardAudio();
+  state.cmpSubMode = mode;
+  document.getElementById("tabCmpTables")?.classList.toggle("active", mode === "tables");
+  document.getElementById("tabFlashCards")?.classList.toggle("active", mode === "cards");
+  document.getElementById("tabGoroSheet")?.classList.toggle("active", mode === "sheet");
+
+  const pTables = document.getElementById("cmpTablesPanel");
+  const pCards = document.getElementById("flashCardsPanel");
+  const pSheet = document.getElementById("goroSheetPanel");
+  if (pTables) pTables.style.display = mode === "tables" ? "block" : "none";
+  if (pCards) pCards.style.display = mode === "cards" ? "block" : "none";
+  if (pSheet) pSheet.style.display = mode === "sheet" ? "block" : "none";
+
+  if (mode === "tables") renderCompareTablesView();
+  else if (mode === "cards") renderFlashcardView();
+  else if (mode === "sheet") renderGoroSheetView();
+}
+
 function bindCompareControls() {
+  // サブモード切替（20大比較表 / 暗記カード / 直前ゴロ赤シート）
+  document.getElementById("tabCmpTables")?.addEventListener("click", () => switchCmpSubMode("tables"));
+  document.getElementById("tabFlashCards")?.addEventListener("click", () => switchCmpSubMode("cards"));
+  document.getElementById("tabGoroSheet")?.addEventListener("click", () => switchCmpSubMode("sheet"));
+
+  // --- 20大比較表コントロール ---
   document.getElementById("btnToggleCmpMask").addEventListener("click", () => {
     state.cmpMaskOn = !state.cmpMaskOn;
     const btn = document.getElementById("btnToggleCmpMask");
@@ -1855,13 +2042,7 @@ function bindCompareControls() {
     btn.textContent = state.cmpMaskOn ? "隠してテスト：ON" : "隠してテスト：OFF";
     btn.className = state.cmpMaskOn ? "btn btn-danger btn-sm" : "btn btn-secondary btn-sm";
     if (resetBtn) resetBtn.style.display = state.cmpMaskOn ? "inline-flex" : "none";
-    document.querySelectorAll(".cmp-table").forEach((t) => {
-      t.classList.toggle("cmp-mask-on", state.cmpMaskOn);
-      t.querySelectorAll("td.cell-open").forEach((td) => td.classList.remove("cell-open"));
-    });
-    document.querySelectorAll(".cmp-tip-box").forEach((el) => {
-      el.style.display = state.cmpMaskOn ? "none" : "block";
-    });
+    renderCompareTablesList();
   });
 
   const resetBtn = document.getElementById("btnResetCmpMask");
@@ -1869,6 +2050,11 @@ function bindCompareControls() {
     resetBtn.addEventListener("click", () => {
       document.querySelectorAll(".cmp-table td.cell-open").forEach((td) => td.classList.remove("cell-open"));
     });
+  }
+
+  const crossQuizBtn = document.getElementById("btnStartCrossCmpQuiz");
+  if (crossQuizBtn) {
+    crossQuizBtn.addEventListener("click", () => openCrossCompareTableQuiz());
   }
 
   const searchEl = document.getElementById("cmpSearch");
@@ -1888,9 +2074,124 @@ function bindCompareControls() {
       if (e.target.id === "cmpQuizModal") quizModal.classList.remove("open");
     });
   }
+
+  // --- めくる暗記カード＆ゴロ帳コントロール ---
+  document.getElementById("fcCardBody")?.addEventListener("click", () => toggleFlashcardFlip());
+  document.getElementById("btnFcFlip")?.addEventListener("click", () => toggleFlashcardFlip());
+
+  document.getElementById("btnFcHard")?.addEventListener("click", () => rateCurrentFlashcard("hard"));
+  document.getElementById("btnFcMid")?.addEventListener("click", () => rateCurrentFlashcard("mid"));
+  document.getElementById("btnFcEasy")?.addEventListener("click", () => rateCurrentFlashcard("easy"));
+
+  document.getElementById("btnFcPrev")?.addEventListener("click", () => {
+    stopFlashcardAudio();
+    if (state.fcIndex > 0) {
+      state.fcIndex -= 1;
+      state.fcFlipped = false;
+      renderFlashcardCard();
+    }
+  });
+  document.getElementById("btnFcNext")?.addEventListener("click", () => {
+    stopFlashcardAudio();
+    if (state.fcDeck.length > 0) {
+      state.fcIndex = (state.fcIndex + 1) % state.fcDeck.length;
+      state.fcFlipped = false;
+      renderFlashcardCard();
+    }
+  });
+
+  const setFcFilter = (f) => {
+    stopFlashcardAudio();
+    state.fcFilter = f;
+    rebuildFlashcardDeck(false);
+    renderFlashcardView();
+  };
+  document.getElementById("btnFcFilterAll")?.addEventListener("click", () => setFcFilter("all"));
+  document.getElementById("btnFcFilterWeak")?.addEventListener("click", () => setFcFilter("weak"));
+  document.getElementById("btnFcFilterUnseen")?.addEventListener("click", () => setFcFilter("unseen"));
+
+  document.getElementById("btnFcShuffle")?.addEventListener("click", () => {
+    stopFlashcardAudio();
+    rebuildFlashcardDeck(true);
+    renderFlashcardView();
+  });
+
+  document.getElementById("btnFcAudioStart")?.addEventListener("click", () => {
+    if (!state.fcDeck.length) return;
+    speakFlashcardIndex(state.fcIndex, true);
+  });
+  document.getElementById("btnFcAudioStop")?.addEventListener("click", () => stopFlashcardAudio());
+  document.getElementById("btnFcSpeakOne")?.addEventListener("click", () => {
+    if (!state.fcDeck.length) return;
+    speakFlashcardIndex(state.fcIndex, false);
+  });
+  document.getElementById("btnFcAudioSpeed")?.addEventListener("click", () => {
+    const rates = [0.85, 1.0, 1.25, 1.5];
+    const nextIdx = (rates.indexOf(state.fcAudioRate) + 1) % rates.length;
+    state.fcAudioRate = rates[nextIdx];
+    const el = document.getElementById("btnFcAudioSpeed");
+    if (el) el.textContent = `速度：${state.fcAudioRate}x`;
+  });
+
+  // PCキーボード操作（暗記カード表示中）
+  document.addEventListener("keydown", (e) => {
+    if (state.currentView !== "compare" || state.cmpSubMode !== "cards") return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      toggleFlashcardFlip();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      document.getElementById("btnFcNext")?.click();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      document.getElementById("btnFcPrev")?.click();
+    } else if (state.fcFlipped && e.key === "1") {
+      e.preventDefault();
+      rateCurrentFlashcard("hard");
+    } else if (state.fcFlipped && e.key === "2") {
+      e.preventDefault();
+      rateCurrentFlashcard("mid");
+    } else if (state.fcFlipped && e.key === "3") {
+      e.preventDefault();
+      rateCurrentFlashcard("easy");
+    }
+  });
+
+  // --- 直前ゴロ赤シートコントロール ---
+  document.getElementById("gsSearch")?.addEventListener("input", () => renderGoroSheetList());
+  document.getElementById("btnGsRedSheet")?.addEventListener("click", () => {
+    state.gsRedSheetOn = !state.gsRedSheetOn;
+    const btn = document.getElementById("btnGsRedSheet");
+    const list = document.getElementById("goroSheetList");
+    if (btn) {
+      btn.textContent = state.gsRedSheetOn ? "赤シート：ON" : "赤シート：OFF";
+      btn.className = state.gsRedSheetOn ? "btn btn-danger btn-sm" : "btn btn-secondary btn-sm";
+    }
+    if (list) list.classList.toggle("redsheet-on", state.gsRedSheetOn);
+  });
+  document.getElementById("btnGsReset")?.addEventListener("click", () => {
+    document.querySelectorAll("#goroSheetList .gs-mask-block.revealed").forEach((el) => el.classList.remove("revealed"));
+  });
+  document.getElementById("btnGsWeakOnly")?.addEventListener("click", () => {
+    state.gsWeakOnly = !state.gsWeakOnly;
+    const btn = document.getElementById("btnGsWeakOnly");
+    if (btn) {
+      btn.textContent = state.gsWeakOnly ? "🔴苦手・🟡あやしいだけ：ON" : "🔴苦手・🟡あやしいだけ：OFF";
+      btn.className = state.gsWeakOnly ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+    }
+    renderGoroSheetList();
+  });
 }
 
 function renderCompareView() {
+  renderCompareTablesView();
+  rebuildFlashcardDeck(false);
+  if (state.cmpSubMode === "cards") renderFlashcardView();
+  else if (state.cmpSubMode === "sheet") renderGoroSheetView();
+}
+
+function renderCompareTablesView() {
   const tables = state.studyPack?.comparison_tables || [];
   const cats = ["すべて", ...new Set(tables.map((t) => t.category || "法規・制度"))];
   const tabs = document.getElementById("cmpCategoryTabs");
@@ -1903,7 +2204,7 @@ function renderCompareView() {
       btn.textContent = `${cat}（${cnt}）`;
       btn.addEventListener("click", () => {
         state.cmpCategory = cat;
-        renderCompareView();
+        renderCompareTablesView();
       });
       tabs.appendChild(btn);
     });
@@ -1951,7 +2252,11 @@ function renderCompareTablesList() {
       .join("");
 
     const tipHtml = tbl.tip
-      ? `<div class="cmp-tip-box" style="display:${state.cmpMaskOn ? "none" : "block"};">💡 ${escapeHtml(tbl.tip)}</div>`
+      ? `${
+          state.cmpMaskOn
+            ? `<div style="margin-top:8px;"><button type="button" class="btn btn-secondary btn-sm js-cmp-tip-toggle">💡 語呂・ヒントを見る ▼</button></div>`
+            : ""
+        }<div class="cmp-tip-box" style="display:${state.cmpMaskOn ? "none" : "block"};">💡 ${escapeHtml(tbl.tip)}</div>`
       : "";
 
     card.innerHTML = `
@@ -1981,6 +2286,17 @@ function renderCompareTablesList() {
       });
     });
 
+    // 隠してテストON時の語呂ヒント開閉
+    const tipToggle = card.querySelector(".js-cmp-tip-toggle");
+    const tipBox = card.querySelector(".cmp-tip-box");
+    if (tipToggle && tipBox) {
+      tipToggle.addEventListener("click", () => {
+        const isHidden = tipBox.style.display === "none";
+        tipBox.style.display = isHidden ? "block" : "none";
+        tipToggle.textContent = isHidden ? "▲ 語呂・ヒントを隠す" : "💡 語呂・ヒントを見る ▼";
+      });
+    }
+
     // 列見出しタップでその1列を一斉開閉（テストモードON時）
     card.querySelectorAll("th.cmp-col-clickable").forEach((th) => {
       th.addEventListener("click", () => {
@@ -2001,15 +2317,13 @@ function renderCompareTablesList() {
   });
 }
 
-function openCompareTableQuiz(tbl) {
-  // 表のセルからランダムに最大5問の4択クイズを自動生成
+function buildCandidatesFromTable(tbl) {
   const candidates = [];
-  tbl.rows.forEach((row, rIdx) => {
+  tbl.rows.forEach((row) => {
     const rowLabel = row[0];
     for (let cIdx = 1; cIdx < tbl.headers.length; cIdx++) {
       const ans = String(row[cIdx] || "").trim();
       if (!ans || ans === "規定なし" || ans === "-") continue;
-      // 同じ列の別行からダミー選択肢を集める
       const colPool = [
         ...new Set(
           tbl.rows
@@ -2017,12 +2331,13 @@ function openCompareTableQuiz(tbl) {
             .filter((v) => v && v !== ans)
         ),
       ];
-      // 同列に選択肢が足りない場合は他列のテキストも補完
       if (colPool.length < 2) continue;
       shuffleArray(colPool);
       const opts = [ans, ...colPool.slice(0, 3)];
       shuffleArray(opts);
       candidates.push({
+        tableTitle: tbl.title,
+        category: tbl.category || "法規・制度",
         rowLabel,
         colLabel: tbl.headers[cIdx],
         answer: ans,
@@ -2030,19 +2345,15 @@ function openCompareTableQuiz(tbl) {
       });
     }
   });
+  return candidates;
+}
 
-  if (candidates.length === 0) {
-    alert("この表はクイズ生成できる項目数が少ないため、隠してテストをご利用ください。");
-    return;
-  }
-
-  shuffleArray(candidates);
-  const questions = candidates.slice(0, Math.min(5, candidates.length));
+function runCompareQuizModal(title, questions, onRetry) {
   let qIdx = 0;
   let score = 0;
   let locked = false;
 
-  document.getElementById("cmpQuizTitle").textContent = `🎯 確認クイズ：${tbl.title}`;
+  document.getElementById("cmpQuizTitle").textContent = title;
   document.getElementById("cmpQuizModal").classList.add("open");
 
   const bodyEl = document.getElementById("cmpQuizBody");
@@ -2051,18 +2362,19 @@ function openCompareTableQuiz(tbl) {
     locked = false;
     if (qIdx >= questions.length) {
       const pct = Math.round((score / questions.length) * 100);
+      recordActivity("cmp_quiz", title, `比較表クイズ(${score}/${questions.length})`, pct >= 80);
       bodyEl.innerHTML = `
         <div class="mock-result-hero ${pct >= 80 ? "pass" : "fail"}">
           <div style="font-size:14px; font-weight:800;">確認クイズ結果</div>
           <div class="mock-score-big" style="color:${pct >= 80 ? "#059669" : "#dc2626"};">${score} / ${questions.length} 問（${pct}%）</div>
-          <div style="font-size:14px; font-weight:700;">${pct === 100 ? "🏆 パーフェクト！この表はバッチリ暗記できています！" : "💪 もう一度挑戦して100%にしましょう！"}</div>
+          <div style="font-size:14px; font-weight:700;">${pct === 100 ? "🏆 パーフェクト！この範囲はバッチリ暗記できています！" : "💪 もう一度挑戦して100%にしましょう！"}</div>
         </div>
         <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
           <button type="button" class="btn btn-primary" id="btnCmpQuizAgain">🔀 別の組み合わせでもう1回</button>
           <button type="button" class="btn btn-secondary" id="btnCmpQuizDone">閉じる</button>
         </div>
       `;
-      bodyEl.querySelector("#btnCmpQuizAgain").addEventListener("click", () => openCompareTableQuiz(tbl));
+      bodyEl.querySelector("#btnCmpQuizAgain").addEventListener("click", () => onRetry());
       bodyEl.querySelector("#btnCmpQuizDone").addEventListener("click", () => {
         document.getElementById("cmpQuizModal").classList.remove("open");
       });
@@ -2071,10 +2383,11 @@ function openCompareTableQuiz(tbl) {
 
     const q = questions[qIdx];
     bodyEl.innerHTML = `
-      <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:800; color:var(--text-sub); margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; font-size:13px; font-weight:800; color:var(--text-sub); margin-bottom:8px;">
         <span>問題 ${qIdx + 1} / ${questions.length}</span>
         <span>正解数：${score}</span>
       </div>
+      ${q.showSource ? `<div style="margin-bottom:8px;"><span class="badge badge-subj">${escapeHtml(q.category)}</span> <span style="font-size:12px; color:var(--text-sub); font-weight:700;">${escapeHtml(q.tableTitle)}</span></div>` : ""}
       <div class="ox-statement" style="font-size:17px; margin:0 0 14px;">
         「<strong>${escapeHtml(q.rowLabel)}</strong>」の <strong>【${escapeHtml(q.colLabel)}】</strong> として正しいのはどれか？
       </div>
@@ -2128,6 +2441,376 @@ function openCompareTableQuiz(tbl) {
   };
 
   renderQuizStep();
+}
+
+function openCompareTableQuiz(tbl) {
+  const candidates = buildCandidatesFromTable(tbl);
+  if (candidates.length === 0) {
+    alert("この表はクイズ生成できる項目数が少ないため、隠してテストをご利用ください。");
+    return;
+  }
+  shuffleArray(candidates);
+  const questions = candidates.slice(0, Math.min(5, candidates.length));
+  runCompareQuizModal(`🎯 確認クイズ：${tbl.title}`, questions, () => openCompareTableQuiz(tbl));
+}
+
+function openCrossCompareTableQuiz() {
+  const allTables = state.studyPack?.comparison_tables || [];
+  const targetTables =
+    state.cmpCategory === "すべて"
+      ? allTables
+      : allTables.filter((t) => (t.category || "法規・制度") === state.cmpCategory);
+  const pool = [];
+  targetTables.forEach((tbl) => {
+    const cands = buildCandidatesFromTable(tbl);
+    shuffleArray(cands);
+    // 各表からバランスよく候補を抽出
+    cands.slice(0, 3).forEach((c) => {
+      c.showSource = true;
+      pool.push(c);
+    });
+  });
+  if (pool.length === 0) {
+    alert("出題できる比較表データがありません。");
+    return;
+  }
+  shuffleArray(pool);
+  const questions = pool.slice(0, Math.min(10, pool.length));
+  const label = state.cmpCategory === "すべて" ? "全24大比較表 横断10問テスト" : `${state.cmpCategory} 横断テスト`;
+  runCompareQuizModal(`🔥 ${label}`, questions, () => openCrossCompareTableQuiz());
+}
+
+// =========================================================================
+// 4-B. めくる暗記カード＆ゴロ帳（60選・3段階仕分け・聞き流し音声）
+// =========================================================================
+function getFlashcardLevel(cardId) {
+  return state.progress.flashMastery?.[cardId]?.level || "unseen";
+}
+
+function rebuildFlashcardDeck(doShuffle) {
+  const all = state.studyPack?.flashcards || [];
+  let list = all.filter((c) => {
+    if (state.fcCategory !== "すべて" && c.category !== state.fcCategory) return false;
+    const lv = getFlashcardLevel(c.id);
+    if (state.fcFilter === "weak") return lv === "hard" || lv === "mid";
+    if (state.fcFilter === "unseen") return lv === "unseen";
+    return true;
+  });
+  if (doShuffle) shuffleArray(list);
+  state.fcDeck = list;
+  state.fcIndex = 0;
+  state.fcFlipped = false;
+}
+
+function updateFlashcardMasterySummary() {
+  const all = state.studyPack?.flashcards || [];
+  const total = all.length || 1;
+  let easy = 0;
+  let mid = 0;
+  let hard = 0;
+  let unseen = 0;
+  all.forEach((c) => {
+    const lv = getFlashcardLevel(c.id);
+    if (lv === "easy") easy += 1;
+    else if (lv === "mid") mid += 1;
+    else if (lv === "hard") hard += 1;
+    else unseen += 1;
+  });
+  const txt = document.getElementById("fcMasteryText");
+  if (txt) txt.textContent = `🟢 覚えた ${easy} ｜ 🟡 あやしい ${mid} ｜ 🔴 苦手 ${hard} ｜ ⬜ 未学習 ${unseen}`;
+  const bE = document.getElementById("fcBarEasy");
+  const bM = document.getElementById("fcBarMid");
+  const bH = document.getElementById("fcBarHard");
+  if (bE) bE.style.width = `${(easy / total) * 100}%`;
+  if (bM) bM.style.width = `${(mid / total) * 100}%`;
+  if (bH) bH.style.width = `${(hard / total) * 100}%`;
+}
+
+function renderFlashcardView() {
+  const all = state.studyPack?.flashcards || [];
+  updateFlashcardMasterySummary();
+
+  // 科目タブ
+  const cats = ["すべて", ...new Set(all.map((c) => c.category))];
+  const tabs = document.getElementById("fcCategoryTabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    cats.forEach((cat) => {
+      const btn = document.createElement("button");
+      btn.className = `tab-pill ${cat === state.fcCategory ? "active" : ""}`;
+      const cnt = cat === "すべて" ? all.length : all.filter((c) => c.category === cat).length;
+      btn.textContent = `${cat}（${cnt}）`;
+      btn.addEventListener("click", () => {
+        stopFlashcardAudio();
+        state.fcCategory = cat;
+        rebuildFlashcardDeck(false);
+        renderFlashcardView();
+      });
+      tabs.appendChild(btn);
+    });
+  }
+
+  // 絞り込みボタン状態
+  const setActiveBtn = (id, active) => {
+    const el = document.getElementById(id);
+    if (el) el.className = active ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+  };
+  setActiveBtn("btnFcFilterAll", state.fcFilter === "all");
+  setActiveBtn("btnFcFilterWeak", state.fcFilter === "weak");
+  setActiveBtn("btnFcFilterUnseen", state.fcFilter === "unseen");
+
+  renderFlashcardCard();
+}
+
+function renderFlashcardCard() {
+  const card = state.fcDeck[state.fcIndex];
+  const catEl = document.getElementById("fcCatBadge");
+  const lvEl = document.getElementById("fcLevelBadge");
+  const progEl = document.getElementById("fcProgress");
+  const frontEl = document.getElementById("fcFrontText");
+  const hintEl = document.getElementById("fcFlipHint");
+  const backWrap = document.getElementById("fcBackWrap");
+  const rateBar = document.getElementById("fcRateBar");
+
+  if (!card) {
+    if (catEl) catEl.textContent = state.fcCategory;
+    if (lvEl) lvEl.textContent = "✨ クリア";
+    if (progEl) progEl.textContent = "0 / 0";
+    if (frontEl) {
+      frontEl.textContent =
+        state.fcFilter === "weak"
+          ? "🎉 苦手・あやしいカードは現在0枚です！「すべて」に切り替えて復習できます。"
+          : "🎉 該当する未学習カードはすべて完了しました！素晴らしいペースです！";
+    }
+    if (hintEl) hintEl.style.display = "none";
+    if (backWrap) backWrap.style.display = "none";
+    if (rateBar) rateBar.style.display = "none";
+    return;
+  }
+
+  const lv = getFlashcardLevel(card.id);
+  const lvMap = {
+    easy: { text: "🟢 覚えた！", bg: "#d1fae5", fg: "#065f46" },
+    mid: { text: "🟡 あやしい", bg: "#fef3c7", fg: "#92400e" },
+    hard: { text: "🔴 苦手", bg: "#fee2e2", fg: "#991b1b" },
+    unseen: { text: "⬜ 未学習", bg: "#f1f5f9", fg: "#475569" },
+  };
+  const meta = lvMap[lv] || lvMap.unseen;
+  if (catEl) catEl.textContent = card.category;
+  if (lvEl) {
+    lvEl.textContent = meta.text;
+    lvEl.style.background = meta.bg;
+    lvEl.style.color = meta.fg;
+  }
+  if (progEl) progEl.textContent = `${state.fcIndex + 1} / ${state.fcDeck.length}`;
+  if (frontEl) frontEl.textContent = card.front;
+
+  document.getElementById("fcAnswerText").textContent = card.answer;
+  document.getElementById("fcGoroText").textContent = card.goro || "（比較表・条文と合わせてイメージ暗記！）";
+  const tipEl = document.getElementById("fcTipBox");
+  if (tipEl) {
+    tipEl.style.display = card.tip ? "block" : "none";
+    tipEl.textContent = card.tip ? `⚠️ ひっかけ注意：${card.tip}` : "";
+  }
+
+  if (hintEl) hintEl.style.display = state.fcFlipped ? "none" : "block";
+  if (backWrap) backWrap.style.display = state.fcFlipped ? "flex" : "none";
+  if (rateBar) rateBar.style.display = state.fcFlipped ? "grid" : "none";
+  document.getElementById("btnFcPrev").disabled = state.fcIndex === 0;
+}
+
+function toggleFlashcardFlip() {
+  if (!state.fcDeck.length) return;
+  state.fcFlipped = !state.fcFlipped;
+  renderFlashcardCard();
+}
+
+function rateCurrentFlashcard(level) {
+  const card = state.fcDeck[state.fcIndex];
+  if (!card) return;
+  stopFlashcardAudio();
+  if (!state.progress.flashMastery) state.progress.flashMastery = {};
+  state.progress.flashMastery[card.id] = { level, ts: Date.now() };
+  saveProgress();
+  recordActivity("flashcard", card.id, `暗記:${card.category}`, level === "easy");
+  updateFlashcardMasterySummary();
+
+  // 「🔴 苦手」は忘却防止のため、3枚あとに自動で割り込み再出題！
+  if (level === "hard" && state.fcDeck.length > 1) {
+    const insertAt = Math.min(state.fcIndex + 4, state.fcDeck.length);
+    state.fcDeck.splice(insertAt, 0, card);
+  }
+
+  if (state.fcIndex + 1 < state.fcDeck.length) {
+    state.fcIndex += 1;
+  } else {
+    state.fcIndex = 0;
+  }
+  state.fcFlipped = false;
+  renderFlashcardCard();
+}
+
+function stopFlashcardAudio() {
+  state.fcAudioActive = false;
+  if (state.fcAudioTimer) {
+    clearTimeout(state.fcAudioTimer);
+    state.fcAudioTimer = null;
+  }
+  if ("speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (_) {}
+  }
+  document.getElementById("fcStageCard")?.classList.remove("fc-audio-playing");
+  const startBtn = document.getElementById("btnFcAudioStart");
+  const stopBtn = document.getElementById("btnFcAudioStop");
+  if (startBtn) startBtn.style.display = "inline-flex";
+  if (stopBtn) stopBtn.style.display = "none";
+}
+
+function speakFlashcardIndex(idx, continuous) {
+  if (!("speechSynthesis" in window)) {
+    alert("お使いのブラウザは音声読み上げに対応していません。");
+    return;
+  }
+  const card = state.fcDeck[idx];
+  if (!card) {
+    stopFlashcardAudio();
+    return;
+  }
+  stopLawAudio();
+  if (state.fcAudioTimer) {
+    clearTimeout(state.fcAudioTimer);
+    state.fcAudioTimer = null;
+  }
+  try {
+    window.speechSynthesis.cancel();
+  } catch (_) {}
+
+  state.fcAudioActive = true;
+  state.fcIndex = idx;
+  state.fcFlipped = false;
+  renderFlashcardCard();
+
+  document.getElementById("fcStageCard")?.classList.add("fc-audio-playing");
+  const startBtn = document.getElementById("btnFcAudioStart");
+  const stopBtn = document.getElementById("btnFcAudioStop");
+  if (startBtn) startBtn.style.display = "none";
+  if (stopBtn) stopBtn.style.display = "inline-flex";
+
+  const jpVoice = getJapaneseVoice();
+  const rate = state.fcAudioRate || 1.0;
+
+  const qUtter = new SpeechSynthesisUtterance(normalizeLawSpeechText(`問題。${card.front}`));
+  qUtter.lang = "ja-JP";
+  qUtter.rate = rate;
+  if (jpVoice) qUtter.voice = jpVoice;
+
+  qUtter.onend = () => {
+    if (!state.fcAudioActive) return;
+    // 2.5秒間のシンキングタイム → 自動でカードをめくって答え＆ゴロを読み上げ！
+    state.fcAudioTimer = setTimeout(() => {
+      if (!state.fcAudioActive) return;
+      state.fcFlipped = true;
+      renderFlashcardCard();
+
+      const ansRaw = `答え。${card.answer}。${card.goro ? `ゴロ合わせ。${card.goro}` : ""}`;
+      const aUtter = new SpeechSynthesisUtterance(normalizeLawSpeechText(ansRaw));
+      aUtter.lang = "ja-JP";
+      aUtter.rate = rate;
+      if (jpVoice) aUtter.voice = jpVoice;
+
+      aUtter.onend = () => {
+        if (!state.fcAudioActive) return;
+        if (continuous && idx + 1 < state.fcDeck.length) {
+          state.fcAudioTimer = setTimeout(() => {
+            if (state.fcAudioActive) speakFlashcardIndex(idx + 1, true);
+          }, 1100);
+        } else {
+          stopFlashcardAudio();
+        }
+      };
+      aUtter.onerror = () => stopFlashcardAudio();
+      window.speechSynthesis.speak(aUtter);
+    }, 2400);
+  };
+  qUtter.onerror = () => stopFlashcardAudio();
+  window.speechSynthesis.speak(qUtter);
+}
+
+// =========================================================================
+// 4-C. 直前ゴロ＆重要数値 赤シート一覧
+// =========================================================================
+function renderGoroSheetView() {
+  const all = state.studyPack?.flashcards || [];
+  const cats = ["すべて", ...new Set(all.map((c) => c.category))];
+  const tabs = document.getElementById("gsCategoryTabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    cats.forEach((cat) => {
+      const btn = document.createElement("button");
+      btn.className = `tab-pill ${cat === state.gsCategory ? "active" : ""}`;
+      const cnt = cat === "すべて" ? all.length : all.filter((c) => c.category === cat).length;
+      btn.textContent = `${cat}（${cnt}）`;
+      btn.addEventListener("click", () => {
+        state.gsCategory = cat;
+        renderGoroSheetView();
+      });
+      tabs.appendChild(btn);
+    });
+  }
+  renderGoroSheetList();
+}
+
+function renderGoroSheetList() {
+  const all = state.studyPack?.flashcards || [];
+  const kw = (document.getElementById("gsSearch")?.value || "").trim().toLowerCase();
+  const container = document.getElementById("goroSheetList");
+  if (!container) return;
+  container.classList.toggle("redsheet-on", state.gsRedSheetOn);
+  container.innerHTML = "";
+
+  const filtered = all.filter((c) => {
+    if (state.gsCategory !== "すべて" && c.category !== state.gsCategory) return false;
+    if (state.gsWeakOnly) {
+      const lv = getFlashcardLevel(c.id);
+      if (lv !== "hard" && lv !== "mid") return false;
+    }
+    if (kw) {
+      const hay = `${c.category} ${c.front} ${c.answer} ${c.goro || ""} ${c.tip || ""}`.toLowerCase();
+      if (!hay.includes(kw)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    container.innerHTML = `<div class="card">該当するゴロ・暗記項目が見つかりません。フィルタや検索ワードを変更してみてください。</div>`;
+    return;
+  }
+
+  filtered.forEach((c) => {
+    const lv = getFlashcardLevel(c.id);
+    const lvTag =
+      lv === "easy" ? "🟢 覚えた" : lv === "mid" ? "🟡 あやしい" : lv === "hard" ? "🔴 苦手" : "⬜ 未学習";
+    const item = document.createElement("div");
+    item.className = "gs-item";
+    item.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <span class="badge badge-subj">${escapeHtml(c.category)}</span>
+        <span style="font-size:12px; font-weight:800; color:var(--text-sub);">${lvTag}</span>
+      </div>
+      <div class="gs-prompt">${escapeHtml(c.front)}</div>
+      <div class="gs-mask-block gs-goro" data-mask-label="🎵 タップして語呂合わせを表示" title="タップで表示/非表示">🎵 ${escapeHtml(c.goro || "")}</div>
+      <div class="gs-mask-block gs-ans" data-mask-label="📕 タップして答えを表示" title="タップで表示/非表示">✅ ${escapeHtml(c.answer)}</div>
+      ${c.tip ? `<div class="gs-mask-block gs-tip" data-mask-label="⚠️ タップしてひっかけ注意を表示" title="タップで表示/非表示">⚠️ ${escapeHtml(c.tip)}</div>` : ""}
+    `;
+    item.querySelectorAll(".gs-mask-block").forEach((blk) => {
+      blk.addEventListener("click", () => {
+        if (state.gsRedSheetOn) blk.classList.toggle("revealed");
+      });
+    });
+    container.appendChild(item);
+  });
 }
 
 // =========================================================================

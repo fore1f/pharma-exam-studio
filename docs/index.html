@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122r" />
+  <link rel="stylesheet" href="./styles.css?v=20261122u" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -54,7 +54,7 @@
         <span class="nav-icon">⚡</span> 一問一答・○×演習
       </button>
       <button class="nav-btn" data-view="compare">
-        <span class="nav-icon">📊</span> 紛らわしい比較表
+        <span class="nav-icon">🧠</span> 暗記法＆24大比較表
       </button>
       <button class="nav-btn" data-view="dashboard">
         <span class="nav-icon">🏆</span> 成績・弱点克服
@@ -485,6 +485,8 @@
             <span style="font-size:12px; color:#881337; display:block;">OFFにすると通常の法令集としてそのまま読めます。ONで重要語句を隠して暗記！</span>
           </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span class="ox-score-pill" id="lawMasteredSummary">暗記済 0 / 89 条文</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLawUnmasteredOnly">⬜ 未暗記だけ：OFF</button>
             <button class="btn btn-danger btn-sm" id="btnToggleRedSheet">赤シート：ON（暗記モード）</button>
             <button class="btn btn-secondary btn-sm" id="btnResetCloze">全部隠し直す</button>
           </div>
@@ -553,29 +555,139 @@
         </div>
       </section>
 
-      <!-- 4. 紛らわしい比較表 -->
+      <!-- 4. 暗記法＆24大比較表 -->
       <section id="view-compare" class="view-section">
-        <h2 class="page-title">📊 まぎらわしい知識・10大比較表</h2>
-        <p class="page-subtitle">法規・実務・薬理・衛生の超頻出ポイントを一網打尽！「隠してテスト」や各表の「🎯 確認クイズ」で確実に定着できます。</p>
+        <h2 class="page-title">🧠 最強の暗記法＆24大比較表</h2>
+        <p class="page-subtitle">「横並び24大比較表」「めくる暗記カード＆ゴロ64選（3段階仕分け＋耳勉聞き流し）」「直前ゴロ赤シート」で一気に定着！</p>
 
-        <div class="card" style="padding:12px 16px;">
-          <input type="search" id="cmpSearch" placeholder="🔍 比較表を検索（例：30日、14歳、ワルファリン、ボツリヌス、特定機能病院）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
+        <div class="mode-switch-bar">
+          <button type="button" class="mode-switch-btn active" id="tabCmpTables">📊 24大比較表</button>
+          <button type="button" class="mode-switch-btn" id="tabFlashCards">🃏 暗記カード＆ゴロ(64)</button>
+          <button type="button" class="mode-switch-btn" id="tabGoroSheet">📕 直前ゴロ赤シート</button>
         </div>
 
-        <div class="law-tabs" id="cmpCategoryTabs"></div>
-
-        <div class="redsheet-bar">
-          <div>
-            <strong style="color:#be123c;">🧠 表の中身を隠してテスト</strong>
-            <span style="font-size:12px; color:#881337; display:block;">ONでセルが赤く隠れます（タップで1マス表示／列の見出しタップで1列まとめて開閉！）</span>
+        <!-- サブ① 24大比較表 -->
+        <div id="cmpTablesPanel">
+          <div class="card" style="padding:12px 16px;">
+            <input type="search" id="cmpSearch" placeholder="🔍 24大比較表を検索（例：30日、ワルファリン、メトホルミン、ステロイド、アレルギー、ホルモン）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
           </div>
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <button type="button" class="btn btn-secondary btn-sm" id="btnToggleCmpMask">隠してテスト：OFF</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnResetCmpMask" style="display:none;">🔄 全部隠し直す</button>
+
+          <div class="law-tabs" id="cmpCategoryTabs"></div>
+
+          <div class="redsheet-bar">
+            <div>
+              <strong style="color:#be123c;">🧠 表の中身を隠してテスト＆横断クイズ</strong>
+              <span style="font-size:12px; color:#881337; display:block;">ONでセルが赤く隠れます（タップで1マス表示／列見出しタップで1列まとめて開閉！）</span>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="btn btn-accent btn-sm" id="btnStartCrossCmpQuiz">🔥 全表から横断10問テスト</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnToggleCmpMask">隠してテスト：OFF</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnResetCmpMask" style="display:none;">🔄 全部隠し直す</button>
+            </div>
+          </div>
+
+          <div id="compareContainer"></div>
+        </div>
+
+        <!-- サブ② めくる暗記カード＆ゴロ帳（60選・3段階仕分け・聞き流し） -->
+        <div id="flashCardsPanel" style="display:none;">
+          <div class="card" style="padding:14px 16px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+              <strong style="font-size:14px; color:var(--primary-dark);">📈 暗記カード達成度（忘却対策・自動同期）</strong>
+              <span id="fcMasteryText" style="font-size:12.5px; font-weight:800; color:var(--text-sub);">🟢 覚えた 0 ｜ 🟡 あやしい 0 ｜ 🔴 苦手 0 ｜ ⬜ 未学習 64</span>
+            </div>
+            <div class="fc-mastery-track">
+              <div class="fc-bar-easy" id="fcBarEasy" style="width:0%;"></div>
+              <div class="fc-bar-mid" id="fcBarMid" style="width:0%;"></div>
+              <div class="fc-bar-hard" id="fcBarHard" style="width:0%;"></div>
+            </div>
+          </div>
+
+          <div class="law-tabs" id="fcCategoryTabs"></div>
+
+          <div class="audio-bar">
+            <div>
+              <strong style="color:var(--primary-dark);">🎧 聞き流し耳勉＆絞り込み</strong>
+              <span style="font-size:12px; color:var(--text-sub); display:block;">「問題 → 2.5秒シンキングタイム → 答え＆語呂」を自動で連続読み上げ！</span>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="btn btn-primary btn-sm" id="btnFcFilterAll">すべて</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnFcFilterWeak">🔴苦手・🟡あやしい集中</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnFcFilterUnseen">⬜未学習</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnFcShuffle">🔀 シャッフル</button>
+              <button type="button" class="btn btn-accent btn-sm" id="btnFcAudioStart">🎧 聞き流し再生</button>
+              <button type="button" class="btn btn-danger btn-sm" id="btnFcAudioStop" style="display:none;">⏹ 停止</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnFcAudioSpeed">速度：1.0x</button>
+            </div>
+          </div>
+
+          <div class="card fc-stage-card" id="fcStageCard">
+            <div class="ox-topbar">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="badge badge-subj" id="fcCatBadge">法規・制度</span>
+                <span class="badge" id="fcLevelBadge" style="background:#f1f5f9; color:#475569;">⬜ 未学習</span>
+                <span style="font-size:13px; font-weight:800; color:var(--text-sub);" id="fcProgress">1 / 64</span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnFcSpeakOne">🔊 このカードを読む</button>
+            </div>
+
+            <div class="fc-card-face" id="fcCardBody" role="button" tabindex="0">
+              <div class="fc-face-label">❓ 問題・テーマ（頭の中で思い出してみよう！）</div>
+              <div class="fc-front-text" id="fcFrontText">読み込み中...</div>
+              <div class="fc-flip-hint" id="fcFlipHint">👆 カードをタップ（または Space キー）で答え＆語呂合わせを表示</div>
+
+              <div class="fc-back-wrap" id="fcBackWrap" style="display:none;">
+                <div class="fc-answer-box">
+                  <div class="fc-sub-label">✅ 正解・暗記ポイント</div>
+                  <div class="fc-answer-text" id="fcAnswerText"></div>
+                </div>
+                <div class="fc-goro-box">
+                  <div class="fc-sub-label" style="color:#92400e;">🎵 定番ゴロ・暗記フック</div>
+                  <div class="fc-goro-text" id="fcGoroText"></div>
+                </div>
+                <div class="fc-tip-box" id="fcTipBox"></div>
+              </div>
+            </div>
+
+            <div class="fc-rate-bar" id="fcRateBar" style="display:none;">
+              <button type="button" class="fc-rate-btn rate-hard" id="btnFcHard">🔴 苦手<small>すぐ再出題</small></button>
+              <button type="button" class="fc-rate-btn rate-mid" id="btnFcMid">🟡 あやしい<small>あとで復習</small></button>
+              <button type="button" class="fc-rate-btn rate-easy" id="btnFcEasy">🟢 覚えた！<small>クリア</small></button>
+            </div>
+
+            <div class="q-nav-bar">
+              <button type="button" class="btn btn-secondary" id="btnFcPrev">← 前のカード</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnFcFlip">🔄 めくる / 隠す</button>
+              <button type="button" class="btn btn-primary" id="btnFcNext">次のカード →</button>
+            </div>
+            <div style="text-align:center; font-size:11px; color:var(--text-sub); margin-top:8px;">
+              ※PCキーボード：<code>Space</code> めくる ／ <code>1</code> 苦手 ／ <code>2</code> あやしい ／ <code>3</code> 覚えた ／ <code>← →</code> 移動
+            </div>
           </div>
         </div>
 
-        <div id="compareContainer"></div>
+        <!-- サブ③ 直前ゴロ＆重要数値・赤シート一覧 -->
+        <div id="goroSheetPanel" style="display:none;">
+          <div class="card" style="padding:12px 16px;">
+            <input type="search" id="gsSearch" placeholder="🔍 ゴロ・暗記項目を検索（例：1類、ビタミン、TDM、保存期間、拮抗薬）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
+          </div>
+
+          <div class="law-tabs" id="gsCategoryTabs"></div>
+
+          <div class="redsheet-bar">
+            <div>
+              <strong style="color:#be123c;">📕 直前3分！ゴロ＆重要事項 赤シート一覧</strong>
+              <span style="font-size:12px; color:#881337; display:block;">赤い部分をタップで個別オープン！試験当日の休み時間の総復習に最適です。</span>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnGsWeakOnly">🔴苦手・🟡あやしいだけ：OFF</button>
+              <button type="button" class="btn btn-danger btn-sm" id="btnGsRedSheet">赤シート：ON</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnGsReset">🔄 全部隠し直す</button>
+            </div>
+          </div>
+
+          <div id="goroSheetList" class="redsheet-on"></div>
+        </div>
       </section>
 
       <!-- 5. 成績・弱点克服 -->
@@ -637,7 +749,7 @@
     <button class="active" data-view="exam"><span class="b-icon">📝</span>過去問</button>
     <button data-view="law"><span class="b-icon">⚖️</span>法令暗記</button>
     <button data-view="ox"><span class="b-icon">⚡</span>○×演習</button>
-    <button data-view="compare"><span class="b-icon">📊</span>比較表</button>
+    <button data-view="compare"><span class="b-icon">🧠</span>暗記・表</button>
     <button data-view="dashboard"><span class="b-icon">🏆</span>成績</button>
   </nav>
 
@@ -723,6 +835,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122r"></script>
+  <script src="./app.js?v=20261122u"></script>
 </body>
 </html>

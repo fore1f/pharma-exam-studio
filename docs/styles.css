@@ -1450,6 +1450,288 @@ html, body {
   opacity: 1;
 }
 
+/* Law Article Mastered State */
+.article-card.law-mastered {
+  border-left: 5px solid var(--success);
+  background: #f7fefb;
+}
+
+.law-master-btn.done {
+  background: var(--success-soft);
+  border-color: var(--success);
+  color: #065f46;
+  font-weight: 800;
+}
+
+/* Flashcards & Goro Study Engine */
+.fc-mastery-track {
+  display: flex;
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.fc-bar-easy {
+  background: linear-gradient(90deg, #059669, #10b981);
+  transition: width 0.28s ease;
+}
+
+.fc-bar-mid {
+  background: linear-gradient(90deg, #d97706, #f59e0b);
+  transition: width 0.28s ease;
+}
+
+.fc-bar-hard {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+  transition: width 0.28s ease;
+}
+
+.fc-stage-card.fc-audio-playing {
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
+}
+
+.fc-card-face {
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  margin: 12px 0 14px;
+}
+
+.fc-card-face:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+
+.fc-face-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary-dark);
+  margin-bottom: 8px;
+}
+
+.fc-front-text {
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.fc-flip-hint {
+  margin-top: 18px;
+  padding: 12px;
+  text-align: center;
+  border-radius: 10px;
+  background: #f0fdfa;
+  border: 1.5px dashed #14b8a6;
+  color: #0f766e;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.fc-back-wrap {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fc-sub-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #065f46;
+  margin-bottom: 4px;
+}
+
+.fc-answer-box {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-left: 4px solid #059669;
+  border-radius: 12px;
+  padding: 13px 15px;
+}
+
+.fc-answer-text {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.75;
+  color: #064e3b;
+}
+
+.fc-goro-box {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1.5px solid #f59e0b;
+  border-radius: 12px;
+  padding: 13px 15px;
+}
+
+.fc-goro-text {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.65;
+  color: #92400e;
+}
+
+.fc-tip-box {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-left: 4px solid #e11d48;
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #9f1239;
+  line-height: 1.65;
+}
+
+.fc-rate-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.fc-rate-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 12px 8px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.fc-rate-btn small {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.fc-rate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+
+.fc-rate-btn.rate-hard {
+  border-color: #f87171;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.fc-rate-btn.rate-mid {
+  border-color: #fbbf24;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.fc-rate-btn.rate-easy {
+  border-color: #34d399;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+/* Goro Red-Sheet Review List */
+.gs-item {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.gs-prompt {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 6px 0 10px;
+  line-height: 1.6;
+}
+
+.gs-mask-block {
+  display: block;
+  border-radius: 10px;
+  padding: 10px 13px;
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.7;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gs-mask-block.gs-ans {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #064e3b;
+}
+
+.gs-mask-block.gs-goro {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-weight: 800;
+}
+
+.gs-mask-block.gs-tip {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #9f1239;
+  font-size: 13.5px;
+  margin-bottom: 0;
+}
+
+#goroSheetList.redsheet-on .gs-mask-block:not(.revealed) {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: transparent !important;
+  user-select: none;
+  position: relative;
+}
+
+#goroSheetList.redsheet-on .gs-mask-block:not(.revealed)::after {
+  content: attr(data-mask-label);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 600px) {
+  .mode-switch-bar {
+    gap: 4px;
+    padding: 4px;
+  }
+  .mode-switch-btn {
+    padding: 9px 6px;
+    font-size: 12.5px;
+  }
+  .fc-front-text {
+    font-size: 18px;
+  }
+  .fc-rate-btn {
+    font-size: 13px;
+    padding: 10px 4px;
+  }
+}
+
 /* Dashboard */
 .kpi-grid {
   display: grid;
