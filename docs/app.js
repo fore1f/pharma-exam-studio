@@ -87,6 +87,10 @@ const state = {
   oxList: [],
   oxIndex: 0,
   oxAnswered: false,
+  oxSessionAnswers: {}, // { qid: { chosen: bool, correct: bool } }
+  oxStartMs: 0,
+  oxSummaryShown: false,
+  oxSummaryReported: false,
   cmpMaskOn: false,
 
   // 永続化データ
@@ -1482,7 +1486,7 @@ function highlightClozeHtml(escapedText, keywords) {
 }
 
 // =========================================================================
-// 3. 一問一答・○×スピード演習
+// 3. 一問一答・○×スピード演習（回答後ロック・全問完了結果レポート・弱点リトライ）
 // =========================================================================
 function bindOxControls() {
   document.getElementById("btnOxTrue").addEventListener("click", () => answerOx(true));
@@ -1494,17 +1498,111 @@ function bindOxControls() {
       renderOxCard();
     }
   });
+
   document.getElementById("btnOxNext").addEventListener("click", () => {
+    if (isOxAllAnswered() && state.oxIndex === state.oxList.length - 1) {
+      showOxSummary();
+      return;
+    }
     if (state.oxIndex < state.oxList.length - 1) {
       state.oxIndex += 1;
       renderOxCard();
+    } else if (isOxAllAnswered()) {
+      showOxSummary();
+    } else {
+      // 未解答の問題へジャンプ
+      const firstUnans = state.oxList.findIndex((q) => !state.oxSessionAnswers[q.id]);
+      if (firstUnans >= 0) {
+        state.oxIndex = firstUnans;
+        renderOxCard();
+      }
     }
   });
+
   document.getElementById("btnOxShuffle").addEventListener("click", () => {
-    shuffleArray(state.oxList);
-    state.oxIndex = 0;
-    renderOxCard();
+    resetOxSession(true);
   });
+
+  document.getElementById("btnOxRestart").addEventListener("click", () => {
+    resetOxSession(false);
+  });
+
+  document.getElementById("btnOxRetryWrong").addEventListener("click", () => {
+    const wrongs = state.oxList.filter((q) => {
+      const a = state.oxSessionAnswers[q.id];
+      return a && !a.correct;
+    });
+    if (wrongs.length === 0) {
+      alert("間違えた問題はありません！全問正解おめでとうございます🎉");
+      return;
+    }
+    state.oxList = wrongs;
+    resetOxSession(true, true);
+  });
+
+  document.getElementById("btnOxRetryAllShuffle").addEventListener("click", () => {
+    const all = state.studyPack?.ox_questions || [];
+    state.oxList = state.oxCategory === "すべて" ? [...all] : all.filter((q) => q.category === state.oxCategory);
+    resetOxSession(true);
+  });
+
+  document.getElementById("btnOxRetryAll").addEventListener("click", () => {
+    const all = state.studyPack?.ox_questions || [];
+    state.oxList = state.oxCategory === "すべて" ? [...all] : all.filter((q) => q.category === state.oxCategory);
+    resetOxSession(false);
+  });
+
+  // PCキーボードショートカット（○×タブ表示中のみ有効）
+  document.addEventListener("keydown", (e) => {
+    if (state.currentView !== "ox" || state.oxSummaryShown) return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    const k = e.key.toLowerCase();
+    if (!state.oxAnswered && (k === "o" || k === "1")) {
+      e.preventDefault();
+      answerOx(true);
+    } else if (!state.oxAnswered && (k === "x" || k === "2")) {
+      e.preventDefault();
+      answerOx(false);
+    } else if (state.oxAnswered && (e.key === "Enter" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      document.getElementById("btnOxNext").click();
+    }
+  });
+}
+
+function resetOxSession(doShuffle, keepList = false) {
+  if (!keepList) {
+    const all = state.studyPack?.ox_questions || [];
+    state.oxList = state.oxCategory === "すべて" ? [...all] : all.filter((q) => q.category === state.oxCategory);
+  }
+  if (doShuffle) shuffleArray(state.oxList);
+  state.oxIndex = 0;
+  state.oxSessionAnswers = {};
+  state.oxStartMs = Date.now();
+  state.oxSummaryShown = false;
+  state.oxSummaryReported = false;
+  document.getElementById("oxPlayCard").style.display = "block";
+  document.getElementById("oxSummaryCard").style.display = "none";
+  renderOxCard();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function isOxAllAnswered() {
+  return state.oxList.length > 0 && state.oxList.every((q) => Boolean(state.oxSessionAnswers[q.id]));
+}
+
+function getOxSessionStats() {
+  const total = state.oxList.length;
+  let answered = 0;
+  let correct = 0;
+  state.oxList.forEach((q) => {
+    const a = state.oxSessionAnswers[q.id];
+    if (a) {
+      answered += 1;
+      if (a.correct) correct += 1;
+    }
+  });
+  return { total, answered, correct, wrong: answered - correct };
 }
 
 function renderOxView() {
@@ -1515,46 +1613,234 @@ function renderOxView() {
   cats.forEach((cat) => {
     const btn = document.createElement("button");
     btn.className = `tab-pill ${cat === state.oxCategory ? "active" : ""}`;
-    btn.textContent = cat;
+    const cnt = cat === "すべて" ? all.length : all.filter((q) => q.category === cat).length;
+    btn.textContent = `${cat}（${cnt}）`;
     btn.addEventListener("click", () => {
       state.oxCategory = cat;
-      state.oxList = cat === "すべて" ? [...all] : all.filter((q) => q.category === cat);
-      state.oxIndex = 0;
+      resetOxSession(false);
       renderOxView();
     });
     tabs.appendChild(btn);
   });
-  renderOxCard();
+  if (!state.oxStartMs) state.oxStartMs = Date.now();
+  if (!state.oxSummaryShown) {
+    renderOxCard();
+  }
+}
+
+function updateOxTopStatus() {
+  const st = getOxSessionStats();
+  const pill = document.getElementById("oxScorePill");
+  if (pill) {
+    pill.textContent = `解答済 ${st.answered}/${st.total} ｜ ⭕ ${st.correct} ｜ ❌ ${st.wrong}`;
+  }
+  const fill = document.getElementById("oxProgressFill");
+  if (fill) {
+    const pct = st.total > 0 ? Math.round((st.answered / st.total) * 100) : 0;
+    fill.style.width = `${pct}%`;
+  }
 }
 
 function renderOxCard() {
-  state.oxAnswered = false;
   const q = state.oxList[state.oxIndex];
   if (!q) return;
+
+  const prev = state.oxSessionAnswers[q.id];
+  state.oxAnswered = Boolean(prev);
+
   document.getElementById("oxCatBadge").textContent = q.category;
   document.getElementById("oxProgress").textContent = `${state.oxIndex + 1} / ${state.oxList.length}`;
   document.getElementById("oxStatement").textContent = q.statement;
-  document.getElementById("oxResultBox").style.display = "none";
+
+  const btnT = document.getElementById("btnOxTrue");
+  const btnF = document.getElementById("btnOxFalse");
+  btnT.classList.remove("ox-picked-ok", "ox-picked-ng");
+  btnF.classList.remove("ox-picked-ok", "ox-picked-ng");
+
+  if (prev) {
+    // すでに解答済み：ボタンを押せないようグレーアウト＆ロック！
+    btnT.disabled = true;
+    btnF.disabled = true;
+    const pickedBtn = prev.chosen ? btnT : btnF;
+    pickedBtn.classList.add(prev.correct ? "ox-picked-ok" : "ox-picked-ng");
+    renderOxExplanationBox(q, prev.chosen, prev.correct);
+  } else {
+    btnT.disabled = false;
+    btnF.disabled = false;
+    document.getElementById("oxResultBox").style.display = "none";
+  }
+
+  document.getElementById("btnOxPrev").disabled = state.oxIndex === 0;
+  const nextBtn = document.getElementById("btnOxNext");
+  const allDone = isOxAllAnswered();
+  if (allDone && state.oxIndex === state.oxList.length - 1) {
+    nextBtn.textContent = `🏆 結果を見る（全${state.oxList.length}問完了！）`;
+    nextBtn.className = "btn btn-accent";
+  } else if (state.oxIndex === state.oxList.length - 1 && !allDone) {
+    nextBtn.textContent = "未解答の問題へ →";
+    nextBtn.className = "btn btn-primary";
+  } else {
+    nextBtn.textContent = "次へ →";
+    nextBtn.className = "btn btn-primary";
+  }
+
+  updateOxTopStatus();
+}
+
+function jumpToLawByRef(refText) {
+  const statutes = state.studyPack?.statutes || [];
+  let targetIdx = -1;
+  if (refText.includes("薬剤師法")) targetIdx = 0;
+  else if (refText.includes("薬機法")) targetIdx = 1;
+  else if (refText.includes("麻向法")) targetIdx = 2;
+  else if (refText.includes("毒劇法")) targetIdx = 3;
+  else if (refText.includes("医療法")) targetIdx = 4;
+  if (targetIdx >= 0 && targetIdx < statutes.length) {
+    state.activeLawIdx = targetIdx;
+    switchView("law");
+    renderLawView();
+  }
+}
+
+function renderOxExplanationBox(q, choiceBool, isCorrect) {
+  const box = document.getElementById("oxResultBox");
+  box.style.display = "block";
+  box.className = `judge-box ${isCorrect ? "ok" : "ng"}`;
+  const allDone = isOxAllAnswered();
+  const canJumpLaw = /薬剤師法|薬機法|麻向法|毒劇法|医療法/.test(q.ref || "");
+
+  box.innerHTML = `
+    <div style="font-size:17px; margin-bottom:6px;">
+      ${isCorrect ? "🎉 正解！" : "❌ 不正解…"}（あなたの解答：${choiceBool ? "○" : "×"} ／ 正解：${q.answer ? "⭕ 正しい" : "❌ 誤り"}）
+    </div>
+    <div style="font-size:15px; line-height:1.75;">${escapeHtml(q.explanation)}</div>
+    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">
+      <span style="font-size:12px; opacity:0.85;">根拠：${escapeHtml(q.ref)}</span>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        ${canJumpLaw ? `<button type="button" class="btn btn-secondary btn-sm js-ox-jump-law">⚖️ 関連法令を見る</button>` : ""}
+        ${allDone ? `<button type="button" class="btn btn-accent btn-sm js-ox-show-summary">🏆 全${state.oxList.length}問の結果を見る</button>` : ""}
+      </div>
+    </div>
+  `;
+
+  const lawBtn = box.querySelector(".js-ox-jump-law");
+  if (lawBtn) lawBtn.addEventListener("click", () => jumpToLawByRef(q.ref || ""));
+  const sumBtn = box.querySelector(".js-ox-show-summary");
+  if (sumBtn) sumBtn.addEventListener("click", () => showOxSummary());
 }
 
 function answerOx(choiceBool) {
   const q = state.oxList[state.oxIndex];
   if (!q) return;
+  // 既に解答済みなら二度押し・選び直しを完全ブロック！
+  if (state.oxAnswered || state.oxSessionAnswers[q.id]) return;
+
   const isCorrect = choiceBool === q.answer;
-  const box = document.getElementById("oxResultBox");
-  box.style.display = "block";
-  box.className = `judge-box ${isCorrect ? "ok" : "ng"}`;
-  box.innerHTML = `
-    <div style="font-size:16px; margin-bottom:6px;">
-      ${isCorrect ? "🎉 正解！" : "❌ 不正解…"}（答え：${q.answer ? "⭕ 正しい" : "❌ 誤り"}）
-    </div>
-    <div>${escapeHtml(q.explanation)}</div>
-    <div style="margin-top:6px; font-size:12px; opacity:0.85;">根拠：${escapeHtml(q.ref)}</div>
-  `;
-  if (!state.oxAnswered) {
-    state.oxAnswered = true;
-    recordActivity("ox_answer", q.id, `○×:${q.category}`, isCorrect);
+  state.oxAnswered = true;
+  state.oxSessionAnswers[q.id] = { chosen: choiceBool, correct: isCorrect };
+  recordActivity("ox_answer", q.id, `○×:${q.category}`, isCorrect);
+  renderOxCard();
+}
+
+function showOxSummary() {
+  state.oxSummaryShown = true;
+  const st = getOxSessionStats();
+  const elapsedSec = Math.max(1, Math.floor((Date.now() - (state.oxStartMs || Date.now())) / 1000));
+  const pct = st.total > 0 ? Math.round((st.correct / st.total) * 100) : 0;
+  const avgSec = st.total > 0 ? Math.round(elapsedSec / st.total) : 0;
+  const isGreat = pct >= 80;
+
+  if (!state.oxSummaryReported) {
+    state.oxSummaryReported = true;
+    recordActivity(
+      "ox_finish",
+      `${st.correct}/${st.total} (${pct}%) ${formatMinSec(elapsedSec)}`,
+      `○×完走:${state.oxCategory}`,
+      isGreat
+    );
   }
+
+  const hero = document.getElementById("oxSummaryHero");
+  hero.className = `mock-result-hero ${isGreat ? "pass" : "fail"}`;
+  const msg =
+    pct === 100
+      ? "🏆 パーフェクト全問正解！！完璧です！"
+      : pct >= 80
+      ? "🎉 合格圏（80%以上）クリア！素晴らしい仕上がりです！"
+      : "💪 間違えたひっかけ問題を今すぐ解き直して100%にしましょう！";
+
+  hero.innerHTML = `
+    <div style="font-size:13px; font-weight:800; color:${isGreat ? "#065f46" : "#991b1b"};">
+      ⚡ 法規・制度 ○×スピード演習（${escapeHtml(state.oxCategory)}・全${st.total}問）結果
+    </div>
+    <div class="mock-score-big" style="color:${isGreat ? "#059669" : "#dc2626"};">
+      ${st.correct} / ${st.total} 問（${pct}%）
+    </div>
+    <div style="font-size:14px; font-weight:700; color:${isGreat ? "#065f46" : "#991b1b"};">${msg}</div>
+  `;
+
+  document.getElementById("oxSummaryKpis").innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">所要時間</div><div class="kpi-val">${formatMinSec(elapsedSec)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">1問あたり平均</div><div class="kpi-val">${avgSec}秒</div></div>
+    <div class="kpi-card"><div class="kpi-label">正解</div><div class="kpi-val" style="color:var(--success);">${st.correct}問</div></div>
+    <div class="kpi-card"><div class="kpi-label">間違い</div><div class="kpi-val" style="color:var(--danger);">${st.wrong}問</div></div>
+  `;
+
+  // 分野別正答率
+  const byCat = {};
+  state.oxList.forEach((q) => {
+    if (!byCat[q.category]) byCat[q.category] = { total: 0, correct: 0 };
+    byCat[q.category].total += 1;
+    if (state.oxSessionAnswers[q.id]?.correct) byCat[q.category].correct += 1;
+  });
+
+  const catBars = document.getElementById("oxSummaryCatBars");
+  catBars.innerHTML = "";
+  Object.entries(byCat).forEach(([cat, d]) => {
+    const cp = Math.round((d.correct / d.total) * 100);
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML = `
+      <span style="font-weight:700;">${escapeHtml(cat)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${cp}%;"></div></div>
+      <span style="text-align:right; font-weight:700;">${cp}% (${d.correct}/${d.total})</span>
+    `;
+    catBars.appendChild(row);
+  });
+
+  // 間違えた問題リスト
+  const wrongs = state.oxList.filter((q) => {
+    const a = state.oxSessionAnswers[q.id];
+    return a && !a.correct;
+  });
+  const retryWrongBtn = document.getElementById("btnOxRetryWrong");
+  retryWrongBtn.style.display = wrongs.length > 0 ? "inline-flex" : "none";
+  retryWrongBtn.textContent = `🔁 間違えた ${wrongs.length} 問だけ今すぐ解き直す`;
+
+  const wrap = document.getElementById("oxWrongListWrap");
+  if (wrongs.length === 0) {
+    wrap.innerHTML = `<div class="judge-box ok">✨ 間違えた問題は1問もありません！この調子で本試験もバッチリです！</div>`;
+  } else {
+    wrap.innerHTML =
+      `<h3 style="margin:12px 0 8px; font-size:15px;">❌ 間違えた問題・ひっかけポイント復習（${wrongs.length}問）</h3>` +
+      wrongs
+        .map(
+          (q) => `<div class="ox-wrong-item">
+            <div style="margin-bottom:4px;">
+              <span class="badge badge-subj">${escapeHtml(q.category)}</span>
+              <strong style="margin-left:6px;">正解：${q.answer ? "⭕ 正しい" : "❌ 誤り"}</strong>
+            </div>
+            <div style="font-weight:700; margin-bottom:4px;">${escapeHtml(q.statement)}</div>
+            <div style="color:#7f1d1d;">${escapeHtml(q.explanation)}</div>
+            <div style="font-size:12px; color:#64748b; margin-top:4px;">根拠：${escapeHtml(q.ref)}</div>
+          </div>`
+        )
+        .join("");
+  }
+
+  document.getElementById("oxPlayCard").style.display = "none";
+  document.getElementById("oxSummaryCard").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // =========================================================================

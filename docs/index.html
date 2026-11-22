@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122n" />
+  <link rel="stylesheet" href="./styles.css?v=20261122p" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -496,30 +496,60 @@
       <!-- 3. 一問一答・○×演習 -->
       <section id="view-ox" class="view-section">
         <h2 class="page-title">⚡ 法規・制度 一問一答 ○×スピード演習</h2>
-        <p class="page-subtitle">「許可 vs 届出」「厚労大臣 vs 都道府県知事」「14歳 vs 18歳」など、毎年狙われるひっかけ問題を徹底攻略！</p>
+        <p class="page-subtitle">「許可 vs 届出」「厚労大臣 vs 都道府県知事」「14歳 vs 18歳」など、毎年狙われるひっかけ問題を徹底攻略！全問解き終えると総合結果レポートが出ます。</p>
 
         <div class="law-tabs" id="oxCategoryTabs"></div>
 
-        <div class="card ox-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <span class="badge badge-subj" id="oxCatBadge">薬剤師法</span>
-            <span style="font-size:13px; font-weight:700; color:var(--text-sub);" id="oxProgress">1 / 36</span>
+        <div class="card ox-card" id="oxPlayCard">
+          <div class="ox-topbar">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span class="badge badge-subj" id="oxCatBadge">薬剤師法</span>
+              <span style="font-size:13px; font-weight:800; color:var(--text-sub);" id="oxProgress">1 / 36</span>
+            </div>
+            <div class="ox-score-pill" id="oxScorePill">解答済 0/36 ｜ ⭕ 0 ｜ ❌ 0</div>
+          </div>
+
+          <div class="ox-progress-track">
+            <div class="ox-progress-fill" id="oxProgressFill" style="width:0%;"></div>
           </div>
 
           <div class="ox-statement" id="oxStatement">読み込み中...</div>
 
           <div class="ox-actions">
-            <button class="ox-btn o-btn" id="btnOxTrue">⭕ 正しい（○）</button>
-            <button class="ox-btn x-btn" id="btnOxFalse">❌ 誤り（×）</button>
+            <button type="button" class="ox-btn o-btn" id="btnOxTrue">⭕ 正しい（○）</button>
+            <button type="button" class="ox-btn x-btn" id="btnOxFalse">❌ 誤り（×）</button>
           </div>
 
           <div id="oxResultBox" style="display:none;"></div>
 
           <div class="q-nav-bar">
-            <button class="btn btn-secondary" id="btnOxPrev">← 前へ</button>
-            <button class="btn btn-secondary btn-sm" id="btnOxShuffle">🔀 ランダム出題</button>
-            <button class="btn btn-primary" id="btnOxNext">次へ →</button>
+            <button type="button" class="btn btn-secondary" id="btnOxPrev">← 前へ</button>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnOxShuffle">🔀 シャッフルして最初から</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnOxRestart">🔄 リセット</button>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnOxNext">次へ →</button>
           </div>
+          <div style="text-align:center; font-size:11px; color:var(--text-sub); margin-top:8px;">
+            ※PCキーボード操作：<code>1</code> または <code>O</code> で○ ／ <code>2</code> または <code>X</code> で× ／ <code>Enter</code> で次へ
+          </div>
+        </div>
+
+        <!-- ○× 全問完了 総合結果レポート -->
+        <div class="card" id="oxSummaryCard" style="display:none;">
+          <div id="oxSummaryHero" class="mock-result-hero pass"></div>
+          <div class="kpi-grid" id="oxSummaryKpis"></div>
+
+          <h3 style="margin:14px 0 8px; font-size:15px;">分野別の正答率</h3>
+          <div id="oxSummaryCatBars"></div>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin:16px 0;">
+            <button type="button" class="btn btn-primary" id="btnOxRetryWrong">🔁 間違えた問題だけ今すぐ解き直す</button>
+            <button type="button" class="btn btn-secondary" id="btnOxRetryAllShuffle">🔀 シャッフルしてもう1周</button>
+            <button type="button" class="btn btn-secondary" id="btnOxRetryAll">🔄 最初からもう1周</button>
+          </div>
+
+          <div id="oxWrongListWrap"></div>
         </div>
       </section>
 
@@ -673,6 +703,6 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122n"></script>
+  <script src="./app.js?v=20261122p"></script>
 </body>
 </html>
