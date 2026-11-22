@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="薬学国試マスター" />
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./styles.css?v=20261122p" />
+  <link rel="stylesheet" href="./styles.css?v=20261122r" />
   <title>薬剤師国家試験 過去問＆法令マスター</title>
 </head>
 <body>
@@ -555,15 +555,24 @@
 
       <!-- 4. 紛らわしい比較表 -->
       <section id="view-compare" class="view-section">
-        <h2 class="page-title">📊 まぎらわしい知識・横並び比較表</h2>
-        <p class="page-subtitle">試験で混同しやすい数字・手続き・ルールを一目で整理。「隠してテスト」をONにすると表の中を赤シート暗記できます。</p>
+        <h2 class="page-title">📊 まぎらわしい知識・10大比較表</h2>
+        <p class="page-subtitle">法規・実務・薬理・衛生の超頻出ポイントを一網打尽！「隠してテスト」や各表の「🎯 確認クイズ」で確実に定着できます。</p>
+
+        <div class="card" style="padding:12px 16px;">
+          <input type="search" id="cmpSearch" placeholder="🔍 比較表を検索（例：30日、14歳、ワルファリン、ボツリヌス、特定機能病院）" style="width:100%; padding:11px 14px; border:2px solid var(--primary); border-radius:10px; font-size:15px;" />
+        </div>
+
+        <div class="law-tabs" id="cmpCategoryTabs"></div>
 
         <div class="redsheet-bar">
           <div>
             <strong style="color:#be123c;">🧠 表の中身を隠してテスト</strong>
-            <span style="font-size:12px; color:#881337; display:block;">ONにすると表のセルが隠れます。タップして答え合わせ！</span>
+            <span style="font-size:12px; color:#881337; display:block;">ONでセルが赤く隠れます（タップで1マス表示／列の見出しタップで1列まとめて開閉！）</span>
           </div>
-          <button class="btn btn-secondary btn-sm" id="btnToggleCmpMask">隠してテスト：OFF</button>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnToggleCmpMask">隠してテスト：OFF</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnResetCmpMask" style="display:none;">🔄 全部隠し直す</button>
+          </div>
         </div>
 
         <div id="compareContainer"></div>
@@ -703,6 +712,17 @@
     </div>
   </div>
 
-  <script src="./app.js?v=20261122q"></script>
+  <!-- Comparison Table Flash Quiz Modal -->
+  <div class="modal-backdrop" id="cmpQuizModal">
+    <div class="modal-card" style="max-width:620px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+        <h3 style="margin:0; font-size:17px; color:var(--primary-dark);" id="cmpQuizTitle">🎯 比較表 確認クイズ</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCloseCmpQuiz">閉じる</button>
+      </div>
+      <div id="cmpQuizBody"></div>
+    </div>
+  </div>
+
+  <script src="./app.js?v=20261122r"></script>
 </body>
 </html>

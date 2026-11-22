@@ -91,6 +91,7 @@ const state = {
   oxStartMs: 0,
   oxSummaryShown: false,
   oxSummaryReported: false,
+  cmpCategory: "すべて",
   cmpMaskOn: false,
 
   // 永続化データ
@@ -486,7 +487,7 @@ async function loadAllExams() {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122m");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122r");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.oxList = [...(state.studyPack.ox_questions || [])];
@@ -1844,49 +1845,289 @@ function showOxSummary() {
 }
 
 // =========================================================================
-// 4. 紛らわしい比較表
+// 4. 紛らわしい比較表（10大テーマ・検索・列単位開閉・自動4択確認クイズ）
 // =========================================================================
 function bindCompareControls() {
   document.getElementById("btnToggleCmpMask").addEventListener("click", () => {
     state.cmpMaskOn = !state.cmpMaskOn;
     const btn = document.getElementById("btnToggleCmpMask");
+    const resetBtn = document.getElementById("btnResetCmpMask");
     btn.textContent = state.cmpMaskOn ? "隠してテスト：ON" : "隠してテスト：OFF";
     btn.className = state.cmpMaskOn ? "btn btn-danger btn-sm" : "btn btn-secondary btn-sm";
+    if (resetBtn) resetBtn.style.display = state.cmpMaskOn ? "inline-flex" : "none";
     document.querySelectorAll(".cmp-table").forEach((t) => {
       t.classList.toggle("cmp-mask-on", state.cmpMaskOn);
       t.querySelectorAll("td.cell-open").forEach((td) => td.classList.remove("cell-open"));
     });
+    document.querySelectorAll(".cmp-tip-box").forEach((el) => {
+      el.style.display = state.cmpMaskOn ? "none" : "block";
+    });
   });
+
+  const resetBtn = document.getElementById("btnResetCmpMask");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      document.querySelectorAll(".cmp-table td.cell-open").forEach((td) => td.classList.remove("cell-open"));
+    });
+  }
+
+  const searchEl = document.getElementById("cmpSearch");
+  if (searchEl) {
+    searchEl.addEventListener("input", () => renderCompareTablesList());
+  }
+
+  const closeQuizBtn = document.getElementById("btnCloseCmpQuiz");
+  if (closeQuizBtn) {
+    closeQuizBtn.addEventListener("click", () => {
+      document.getElementById("cmpQuizModal").classList.remove("open");
+    });
+  }
+  const quizModal = document.getElementById("cmpQuizModal");
+  if (quizModal) {
+    quizModal.addEventListener("click", (e) => {
+      if (e.target.id === "cmpQuizModal") quizModal.classList.remove("open");
+    });
+  }
 }
 
 function renderCompareView() {
   const tables = state.studyPack?.comparison_tables || [];
+  const cats = ["すべて", ...new Set(tables.map((t) => t.category || "法規・制度"))];
+  const tabs = document.getElementById("cmpCategoryTabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    cats.forEach((cat) => {
+      const btn = document.createElement("button");
+      btn.className = `tab-pill ${cat === state.cmpCategory ? "active" : ""}`;
+      const cnt = cat === "すべて" ? tables.length : tables.filter((t) => (t.category || "法規・制度") === cat).length;
+      btn.textContent = `${cat}（${cnt}）`;
+      btn.addEventListener("click", () => {
+        state.cmpCategory = cat;
+        renderCompareView();
+      });
+      tabs.appendChild(btn);
+    });
+  }
+  renderCompareTablesList();
+}
+
+function renderCompareTablesList() {
+  const tables = state.studyPack?.comparison_tables || [];
+  const kw = (document.getElementById("cmpSearch")?.value || "").trim().toLowerCase();
   const container = document.getElementById("compareContainer");
   container.innerHTML = "";
-  tables.forEach((tbl) => {
+
+  const filtered = tables.filter((tbl) => {
+    const cat = tbl.category || "法規・制度";
+    if (state.cmpCategory !== "すべて" && cat !== state.cmpCategory) return false;
+    if (kw) {
+      const hay = `${tbl.title} ${tbl.subtitle} ${tbl.tip || ""} ${tbl.headers.join(" ")} ${tbl.rows.flat().join(" ")}`.toLowerCase();
+      if (!hay.includes(kw)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    container.innerHTML = `<div class="card">該当する比較表が見つかりません。別のキーワードでお試しください。</div>`;
+    return;
+  }
+
+  filtered.forEach((tbl) => {
     const card = document.createElement("div");
     card.className = "card";
-    const ths = tbl.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("");
-    const trs = tbl.rows
-      .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
+    const ths = tbl.headers
+      .map(
+        (h, cIdx) =>
+          `<th class="${cIdx > 0 ? "cmp-col-clickable" : ""}" data-col="${cIdx}" title="${cIdx > 0 ? "テストモード時：クリックでこの列をまとめて開閉" : ""}">${escapeHtml(h)}</th>`
+      )
       .join("");
+    const trs = tbl.rows
+      .map(
+        (row) =>
+          `<tr>${row
+            .map((cell, cIdx) => `<td data-col="${cIdx}">${escapeHtml(cell)}</td>`)
+            .join("")}</tr>`
+      )
+      .join("");
+
+    const tipHtml = tbl.tip
+      ? `<div class="cmp-tip-box" style="display:${state.cmpMaskOn ? "none" : "block"};">💡 ${escapeHtml(tbl.tip)}</div>`
+      : "";
+
     card.innerHTML = `
-      <h3 style="margin:0 0 4px; font-size:16px;">${escapeHtml(tbl.title)}</h3>
-      <p style="margin:0 0 10px; font-size:12px; color:var(--text-sub);">${escapeHtml(tbl.subtitle)}</p>
+      <div class="cmp-card-head">
+        <div>
+          <span class="badge badge-subj" style="margin-bottom:4px;">${escapeHtml(tbl.category || "法規・制度")}</span>
+          <h3 style="margin:2px 0 4px; font-size:17px;">${escapeHtml(tbl.title)}</h3>
+          <p style="margin:0; font-size:12.5px; color:var(--text-sub);">${escapeHtml(tbl.subtitle)}</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm js-start-cmp-quiz">🎯 この表から確認クイズ</button>
+      </div>
       <div class="cmp-table-wrap">
         <table class="cmp-table ${state.cmpMaskOn ? "cmp-mask-on" : ""}">
           <thead><tr>${ths}</tr></thead>
           <tbody>${trs}</tbody>
         </table>
       </div>
+      ${tipHtml}
     `;
-    card.querySelectorAll("td").forEach((td, idx) => {
+
+    // セル単体タップで開閉
+    card.querySelectorAll("td").forEach((td) => {
       td.addEventListener("click", () => {
-        if (state.cmpMaskOn) td.classList.toggle("cell-open");
+        if (state.cmpMaskOn && Number(td.dataset.col) > 0) {
+          td.classList.toggle("cell-open");
+        }
       });
     });
+
+    // 列見出しタップでその1列を一斉開閉（テストモードON時）
+    card.querySelectorAll("th.cmp-col-clickable").forEach((th) => {
+      th.addEventListener("click", () => {
+        if (!state.cmpMaskOn) return;
+        const col = th.dataset.col;
+        const cells = [...card.querySelectorAll(`td[data-col="${col}"]`)];
+        const anyClosed = cells.some((c) => !c.classList.contains("cell-open"));
+        cells.forEach((c) => c.classList.toggle("cell-open", anyClosed));
+      });
+    });
+
+    // この表から4択確認クイズを自動生成して開始
+    card.querySelector(".js-start-cmp-quiz").addEventListener("click", () => {
+      openCompareTableQuiz(tbl);
+    });
+
     container.appendChild(card);
   });
+}
+
+function openCompareTableQuiz(tbl) {
+  // 表のセルからランダムに最大5問の4択クイズを自動生成
+  const candidates = [];
+  tbl.rows.forEach((row, rIdx) => {
+    const rowLabel = row[0];
+    for (let cIdx = 1; cIdx < tbl.headers.length; cIdx++) {
+      const ans = String(row[cIdx] || "").trim();
+      if (!ans || ans === "規定なし" || ans === "-") continue;
+      // 同じ列の別行からダミー選択肢を集める
+      const colPool = [
+        ...new Set(
+          tbl.rows
+            .map((r) => String(r[cIdx] || "").trim())
+            .filter((v) => v && v !== ans)
+        ),
+      ];
+      // 同列に選択肢が足りない場合は他列のテキストも補完
+      if (colPool.length < 2) continue;
+      shuffleArray(colPool);
+      const opts = [ans, ...colPool.slice(0, 3)];
+      shuffleArray(opts);
+      candidates.push({
+        rowLabel,
+        colLabel: tbl.headers[cIdx],
+        answer: ans,
+        options: opts,
+      });
+    }
+  });
+
+  if (candidates.length === 0) {
+    alert("この表はクイズ生成できる項目数が少ないため、隠してテストをご利用ください。");
+    return;
+  }
+
+  shuffleArray(candidates);
+  const questions = candidates.slice(0, Math.min(5, candidates.length));
+  let qIdx = 0;
+  let score = 0;
+  let locked = false;
+
+  document.getElementById("cmpQuizTitle").textContent = `🎯 確認クイズ：${tbl.title}`;
+  document.getElementById("cmpQuizModal").classList.add("open");
+
+  const bodyEl = document.getElementById("cmpQuizBody");
+
+  const renderQuizStep = () => {
+    locked = false;
+    if (qIdx >= questions.length) {
+      const pct = Math.round((score / questions.length) * 100);
+      bodyEl.innerHTML = `
+        <div class="mock-result-hero ${pct >= 80 ? "pass" : "fail"}">
+          <div style="font-size:14px; font-weight:800;">確認クイズ結果</div>
+          <div class="mock-score-big" style="color:${pct >= 80 ? "#059669" : "#dc2626"};">${score} / ${questions.length} 問（${pct}%）</div>
+          <div style="font-size:14px; font-weight:700;">${pct === 100 ? "🏆 パーフェクト！この表はバッチリ暗記できています！" : "💪 もう一度挑戦して100%にしましょう！"}</div>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary" id="btnCmpQuizAgain">🔀 別の組み合わせでもう1回</button>
+          <button type="button" class="btn btn-secondary" id="btnCmpQuizDone">閉じる</button>
+        </div>
+      `;
+      bodyEl.querySelector("#btnCmpQuizAgain").addEventListener("click", () => openCompareTableQuiz(tbl));
+      bodyEl.querySelector("#btnCmpQuizDone").addEventListener("click", () => {
+        document.getElementById("cmpQuizModal").classList.remove("open");
+      });
+      return;
+    }
+
+    const q = questions[qIdx];
+    bodyEl.innerHTML = `
+      <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:800; color:var(--text-sub); margin-bottom:10px;">
+        <span>問題 ${qIdx + 1} / ${questions.length}</span>
+        <span>正解数：${score}</span>
+      </div>
+      <div class="ox-statement" style="font-size:17px; margin:0 0 14px;">
+        「<strong>${escapeHtml(q.rowLabel)}</strong>」の <strong>【${escapeHtml(q.colLabel)}】</strong> として正しいのはどれか？
+      </div>
+      <div id="cmpQuizOpts">
+        ${q.options
+          .map(
+            (opt, i) =>
+              `<button type="button" class="cmp-quiz-opt" data-opt-idx="${i}">${i + 1}. ${escapeHtml(opt)}</button>`
+          )
+          .join("")}
+      </div>
+      <div id="cmpQuizJudge" style="display:none; margin-top:10px;"></div>
+      <div style="text-align:right; margin-top:12px;">
+        <button type="button" class="btn btn-primary" id="btnCmpQuizNext" style="display:none;">
+          ${qIdx === questions.length - 1 ? "🏆 結果を見る" : "次の問題 →"}
+        </button>
+      </div>
+    `;
+
+    const optBtns = bodyEl.querySelectorAll(".cmp-quiz-opt");
+    optBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (locked) return;
+        locked = true;
+        const picked = q.options[Number(btn.dataset.optIdx)];
+        const isOk = picked === q.answer;
+        if (isOk) score += 1;
+
+        optBtns.forEach((b) => {
+          b.disabled = true;
+          const val = q.options[Number(b.dataset.optIdx)];
+          if (val === q.answer) b.classList.add("ok");
+          else if (b === btn && !isOk) b.classList.add("ng");
+        });
+
+        const jBox = bodyEl.querySelector("#cmpQuizJudge");
+        jBox.style.display = "block";
+        jBox.className = `judge-box ${isOk ? "ok" : "ng"}`;
+        jBox.innerHTML = isOk
+          ? `🎉 <strong>正解！</strong>`
+          : `❌ <strong>不正解</strong>　正解は「<strong>${escapeHtml(q.answer)}</strong>」です。`;
+
+        const nextB = bodyEl.querySelector("#btnCmpQuizNext");
+        nextB.style.display = "inline-flex";
+        nextB.onclick = () => {
+          qIdx += 1;
+          renderQuizStep();
+        };
+      });
+    });
+  };
+
+  renderQuizStep();
 }
 
 // =========================================================================
