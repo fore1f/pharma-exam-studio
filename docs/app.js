@@ -536,7 +536,7 @@ function isKinkiPastQuestion(qid) {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122x");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122y");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.kinkiPastSet = new Set(state.studyPack.kinki_past_qids || []);
