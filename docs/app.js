@@ -536,7 +536,7 @@ function isKinkiPastQuestion(qid) {
 
 async function loadStudyPack() {
   if (state.studyPack) return state.studyPack;
-  const resp = await fetch("./data/laws/study_pack.json?v=20261122w");
+  const resp = await fetch("./data/laws/study_pack.json?v=20261122x");
   if (!resp.ok) return null;
   state.studyPack = await resp.json();
   state.kinkiPastSet = new Set(state.studyPack.kinki_past_qids || []);
@@ -1918,6 +1918,8 @@ function renderOxCard() {
 
   const btnT = document.getElementById("btnOxTrue");
   const btnF = document.getElementById("btnOxFalse");
+  btnT.textContent = state.oxMode === "kinki" ? "⭕ 安全・適切（○）" : "⭕ 正しい（○）";
+  btnF.textContent = state.oxMode === "kinki" ? "❌ 絶対NG・禁忌（×）" : "❌ 誤り（×）";
   btnT.classList.remove("ox-picked-ok", "ox-picked-ng");
   btnF.classList.remove("ox-picked-ok", "ox-picked-ng");
 
@@ -1973,9 +1975,18 @@ function renderOxExplanationBox(q, choiceBool, isCorrect) {
   const allDone = isOxAllAnswered();
   const canJumpLaw = /薬剤師法|薬機法|麻向法|毒劇法|医療法/.test(q.ref || "");
 
+  const isKinki = state.oxMode === "kinki";
+  const ansLabel = q.answer
+    ? isKinki
+      ? "⭕ 安全・適切"
+      : "⭕ 正しい"
+    : isKinki
+    ? "❌ 絶対NG・禁忌"
+    : "❌ 誤り";
+
   box.innerHTML = `
     <div style="font-size:17px; margin-bottom:6px;">
-      ${isCorrect ? "🎉 正解！" : "❌ 不正解…"}（あなたの解答：${choiceBool ? "○" : "×"} ／ 正解：${q.answer ? "⭕ 正しい" : "❌ 誤り"}）
+      ${isCorrect ? "🎉 正解！" : "❌ 不正解…"}（あなたの解答：${choiceBool ? "○" : "×"} ／ 正解：${ansLabel}）
     </div>
     <div style="font-size:15px; line-height:1.75;">${escapeHtml(q.explanation)}</div>
     <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">
